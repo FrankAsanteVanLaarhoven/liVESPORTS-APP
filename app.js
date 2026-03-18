@@ -270,6 +270,10 @@ function createTodayCard(match) {
         `;
     }
 
+    const isLive = match.status_state === 'in';
+    const isPost = match.status_state === 'post';
+    const hasScores = isLive || isPost;
+
     return `
         <div class="match-card today-card" data-sport="${match.sport_key ? match.sport_key.toLowerCase() : ''}">
             <div class="poster-bg" style="background-image: url('${getPosterForSport(match.sport_title)}')"></div>
@@ -278,12 +282,12 @@ function createTodayCard(match) {
                     <span class="sport-tag">${match.sport_title}</span>
                 </div>
                 <div class="teams">
-                    <span class="team">${match.home_team}</span>
-                    <span class="vs">VS</span>
-                    <span class="team">${match.away_team}</span>
+                    <span class="team">${match.home_team} ${hasScores && match.home_score ? `<span class="score-badge">${match.home_score}</span>` : ''}</span>
+                    <span class="vs">${isLive ? '<span class="live-pulse">🔴 LIVE</span>' : isPost ? 'FT' : 'VS'}</span>
+                    <span class="team">${match.away_team} ${hasScores && match.away_score ? `<span class="score-badge">${match.away_score}</span>` : ''}</span>
                 </div>
                 <div class="match-meta">
-                    <span class="time">Today @ ${timeFormatted}</span>
+                    <span class="time ${isLive ? 'text-green' : ''}">${isLive || isPost ? match.status_detail : 'Today @ ' + timeFormatted}</span>
                 </div>
             </div>
             
@@ -322,17 +326,23 @@ function createForecastCard(event) {
         `;
     }
 
+    const isLive = event.status_state === 'in';
+    const isPost = event.status_state === 'post';
+    const hasScores = isLive || isPost;
+
     return `
         <div class="forecast-card" data-sport="${event.sport_key ? event.sport_key.toLowerCase() : ''}">
             <div class="poster-bg" style="background-image: url('${getPosterForSport(event.sport_title)}')"></div>
             <div class="f-date">
-                <span class="f-day">${dayDate}</span>
-                <span class="f-time">${timeFormatted}</span>
+                <span class="f-day">${isLive ? '<span class="live-pulse">LIVE</span>' : dayDate}</span>
+                <span class="f-time ${isLive ? 'text-green' : ''}">${isLive || isPost ? event.status_detail : timeFormatted}</span>
             </div>
             <div class="f-details">
                 <div class="f-sport">${event.sport_title}</div>
                 <div class="f-matchup">
-                    ${event.home_team} ${event.away_team ? 'vs ' + event.away_team : ''}
+                    ${event.home_team} ${hasScores ? `<strong>${event.home_score}</strong>` : ''} 
+                    ${isLive ? 'vs' : isPost ? '-' : 'vs'} 
+                    ${event.away_team} ${hasScores ? `<strong>${event.away_score}</strong>` : ''}
                 </div>
                 <div class="f-meta-row">
                     <div class="f-network">📺 ${event.broadcaster || 'TBD'}</div>

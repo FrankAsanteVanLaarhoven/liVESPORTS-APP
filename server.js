@@ -217,6 +217,10 @@ async function fetchESPN(config) {
                 strLeague: config.title,
                 strHomeTeam: home ? home.team.displayName : 'TBD',
                 strAwayTeam: away ? away.team.displayName : 'TBD',
+                homeScore: home ? home.score : '',
+                awayScore: away ? away.score : '',
+                statusState: e.status ? e.status.type.state : 'pre',
+                statusDetail: e.status ? e.status.type.shortDetail : '',
                 strTimestamp: e.date
             };
         }).filter(Boolean);
@@ -261,6 +265,10 @@ function mapLiveEvents(allEvents) {
             sport_title: evt.strLeague || evt.strSport,
             home_team: evt.strHomeTeam,
             away_team: evt.strAwayTeam,
+            home_score: evt.homeScore,
+            away_score: evt.awayScore,
+            status_state: evt.statusState,
+            status_detail: evt.statusDetail,
             commence_time: evt.strTimestamp,
             broadcasters: defaultBroadcasters,
             broadcaster: 'Local Providers',
