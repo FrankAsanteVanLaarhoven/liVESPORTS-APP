@@ -179,14 +179,49 @@ function generateDailyPicks(allEvents) {
 }
 
 
-async function fetchTheSportsDBLeague(leagueId) {
+const ESPN_APIs = [
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard', key: 'Basketball', title: 'NBA' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard', key: 'American Football', title: 'NFL' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard', key: 'Hockey', title: 'NHL' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard', key: 'Baseball', title: 'MLB' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard', key: 'Soccer', title: 'English Premier League' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.2/scoreboard', key: 'Soccer', title: 'Championship' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.fa/scoreboard', key: 'Soccer', title: 'FA Cup' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.league_cup/scoreboard', key: 'Soccer', title: 'League Cup' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard', key: 'Soccer', title: 'Champions League' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard', key: 'Soccer', title: 'Europa League' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard', key: 'Soccer', title: 'La Liga' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard', key: 'Soccer', title: 'Serie A' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard', key: 'Soccer', title: 'Bundesliga' },
+    { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard', key: 'Soccer', title: 'Ligue 1' }
+];
+
+async function fetchESPN(config) {
     try {
-        const response = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${leagueId}`);
+        const response = await fetch(config.url);
         if (!response.ok) return [];
         const data = await response.json();
-        return data.events || [];
+        
+        if (!data.events) return [];
+
+        return data.events.map(e => {
+            const comp = e.competitions && e.competitions[0];
+            if(!comp) return null;
+            
+            const home = comp.competitors.find(c => c.homeAway === 'home');
+            const away = comp.competitors.find(c => c.homeAway === 'away');
+            
+            return {
+                idEvent: e.id,
+                strSport: config.key,
+                strLeague: config.title,
+                strHomeTeam: home ? home.team.displayName : 'TBD',
+                strAwayTeam: away ? away.team.displayName : 'TBD',
+                strTimestamp: e.date
+            };
+        }).filter(Boolean);
     } catch (error) {
-        console.error(`Failed to fetch league ${leagueId}:`, error);
+        console.error(`Failed to fetch ESPN ${config.title}:`, error);
         return [];
     }
 }
@@ -248,24 +283,17 @@ function mapLiveEvents(allEvents) {
     return { today: todayEvents, forecast: forecastEvents, parlays: parlays };
 }
 
-// Async Data Generator pulling from TheSportsDB
+// Async Data Generator pulling from ESPN APIs
 async function getLiveOddsData() {
-    // 4480 = Champions League, 4481 = Europa League
-    // 4328 = EPL, 4335 = La Liga, 4332 = Serie A
-    // 4387 = NBA, 4380 = NHL, 4424 = MLB, 4391 = NFL
-    // Added 4461 (FA Cup), 4462 (EFL Cup), 4329 (Championship), 4331 (Bundesliga), 4334 (Ligue 1)
-    const leagueIdsToFetch = [4480, 4481, 4328, 4329, 4461, 4462, 4331, 4334, 4335, 4332, 4387, 4380, 4424, 4391];
-    
-    console.log("Fetching live schedules from TheSportsDB...");
+    console.log("Fetching live schedules from ESPN Multi-Sport...");
     
     // Fetch all leagues in parallel
-    const allResults = await Promise.all(leagueIdsToFetch.map(id => fetchTheSportsDBLeague(id)));
+    const allResults = await Promise.all(ESPN_APIs.map(fetchESPN));
     
     // Flatten array of arrays
     let combinedEvents = allResults.flat();
     
-    // Removed the SOTA PREMIUM mock injections as requested.
-    console.log(`Successfully retrieved ${combinedEvents.length} upcoming live events.`);
+    console.log(`Successfully retrieved ${combinedEvents.length} upcoming live events from ESPN.`);
 
     return mapLiveEvents(combinedEvents);
 }
