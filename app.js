@@ -698,20 +698,24 @@ function processIntent(text) {
         const cards = document.querySelectorAll('.match-card, .forecast-card');
         cards.forEach(card => {
             const dataSport = card.getAttribute('data-sport') || '';
-            if (card.textContent.toLowerCase().includes(intent) || dataSport.includes(intent.replace('football', 'american football'))) {
-                card.style.display = '';
+            const textContent = card.textContent.toLowerCase();
+            
+            let isMatch = false;
+            if (intent === 'cup') {
+                isMatch = textContent.includes('cup') || textContent.includes('champions league') || textContent.includes('europa league');
+            } else if (textContent.includes(intent) || dataSport.includes(intent.replace('football', 'american football'))) {
+                isMatch = true;
             } else if (intent === 'football' && dataSport.includes('american football')) {
-                // handle the 'football' button triggering American Football
-                card.style.display = '';
+                isMatch = true;
             } else if (intent === 'football' && dataSport.includes('soccer') && window.location.hostname.includes('uk')) {
-                card.style.display = '';
+                isMatch = true;
             } else if (intent === 'soccer' && dataSport.includes('soccer')) {
-                card.style.display = '';
+                isMatch = true;
             } else if (dataSport.includes(intent)) {
-                card.style.display = '';
-            } else {
-                card.style.display = 'none';
+                isMatch = true;
             }
+            
+            card.style.display = isMatch ? '' : 'none';
         });
     } else {
         // Reset all displays if a main section was triggered

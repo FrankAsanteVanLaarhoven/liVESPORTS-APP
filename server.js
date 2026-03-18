@@ -34,101 +34,7 @@ function generateDateString(daysOffset, hoursOffset) {
     return d.toISOString();
 }
 
-/**
- * Generates realistic-looking odds for the Top 10 bookmakers.
- * Calculates which bookmaker offers the "Best Odds" (highest decimal value)
- * for the favored participant (to keep the mock simple).
- */
-function generateTop10Odds(baseOddsDecimal, favoriteName) {
-    const bookmakersList = ['Bet365', 'SkyBet', 'William Hill', 'Ladbrokes', 'Betfred', 'Paddy Power', 'Coral', 'BetVictor', 'Unibet', '888sport'];
-    
-    let bookmakersData = [];
-    let bestDecimal = 0;
-    let bestBookie = null;
-
-    bookmakersList.forEach(bookie => {
-        // Vary the odds slightly around the base
-        const variation = (Math.random() * 0.4) - 0.2; // -0.2 to +0.2
-        const decimalOdds = Math.max(1.01, +(baseOddsDecimal + variation).toFixed(2));
-        
-        // Convert to American format for display
-        let americanOdds = '';
-        if (decimalOdds >= 2.0) {
-            americanOdds = '+' + Math.round((decimalOdds - 1) * 100);
-        } else {
-            americanOdds = '-' + Math.round(100 / (decimalOdds - 1));
-        }
-
-        const oddsString = `${favoriteName} ${americanOdds}`;
-
-        bookmakersData.push({
-            key: bookie.toLowerCase().replace(/\s+/g, ''),
-            title: bookie,
-            last_update: new Date().toISOString(),
-            markets: [
-                {
-                    key: 'h2h',
-                    outcomes: [
-                        { name: favoriteName, price: decimalOdds, displayStr: oddsString }
-                    ]
-                }
-            ],
-            link: `https://www.${bookie.toLowerCase().replace(/\s+/g, '')}.com`
-        });
-
-        // Track the absolute best odds
-        if (decimalOdds > bestDecimal) {
-            bestDecimal = decimalOdds;
-            bestBookie = bookie;
-        }
-    });
-
-    // Sort bookmakers by best decimal odds descending so top 5 is easy to slice
-    bookmakersData.sort((a, b) => b.markets[0].outcomes[0].price - a.markets[0].outcomes[0].price);
-
-    const bestAmerican = bestDecimal >= 2.0 ? '+' + Math.round((bestDecimal - 1) * 100) : '-' + Math.round(100 / (bestDecimal - 1));
-
-    // ADVANCED ANALYTICS Engine
-    const impliedProb = 1 / bestDecimal;
-    
-    // Simulate a quantitative edge ranging from -2% to +10%
-    const edgeSimulation = (Math.random() * 0.12) - 0.02;
-    const modelProb = Math.min(0.99, Math.max(0.01, impliedProb + edgeSimulation));
-    
-    const edgePct = (modelProb - impliedProb) * 100;
-    const ev = (modelProb * bestDecimal) - 1; // Expected Value per unit
-    
-    // Kelly Criterion Stake Sizing
-    let recommendedStake = 0;
-    if (ev > 0) {
-        const b = bestDecimal - 1;
-        const p = modelProb;
-        const q = 1 - p;
-        const kellyFraction = (b * p - q) / b;
-        
-        // Quarter Kelly strategy capped at 5% of bankroll
-        recommendedStake = Math.min(5.0, Math.max(0.1, kellyFraction * 0.25 * 100));
-    }
-
-    const analytics = {
-        implied_probability: (impliedProb * 100).toFixed(1),
-        model_probability: (modelProb * 100).toFixed(1),
-        edge_percent: edgePct.toFixed(1),
-        expected_value: (ev * 100).toFixed(1),
-        recommended_stake: recommendedStake > 0 ? `${recommendedStake.toFixed(1)}%` : 'No Bet'
-    };
-
-    return {
-        bookmakers: bookmakersData,
-        best_odds: {
-            provider: bestBookie,
-            decimal: bestDecimal,
-            displayStr: `${favoriteName} ${bestAmerican}`,
-            link: `https://www.${bestBookie.toLowerCase().replace(/\s+/g, '')}.com`
-        },
-        analytics: analytics
-    };
-}
+// Real odds are now parsed directly from ESPN within fetchESPN
 
 function generateDailyPicks(allEvents) {
     // Filter to only events with significant positive EV (> 2% return)
@@ -211,6 +117,61 @@ async function fetchESPN(config) {
             const home = comp.competitors.find(c => c.homeAway === 'home');
             const away = comp.competitors.find(c => c.homeAway === 'away');
             
+            const rawOdds = comp.odds && comp.odds[0] ? comp.odds[0] : null;
+            let best_odds = null;
+            let analytics = null;
+            let bookmakers = [];
+
+            if (rawOdds) {
+                const providerName = rawOdds.provider ? rawOdds.provider.name : "Vegas";
+                const displayStr = rawOdds.details || "N/A";
+                let ml = 0;
+                if (rawOdds.homeTeamOdds && rawOdds.homeTeamOdds.moneyLine) ml = rawOdds.homeTeamOdds.moneyLine;
+                else if (rawOdds.awayTeamOdds && rawOdds.awayTeamOdds.moneyLine) ml = rawOdds.awayTeamOdds.moneyLine;
+                
+                let decimalOdds = 1.91;
+                if (ml > 0) decimalOdds = 1 + (ml / 100);
+                else if (ml < 0) decimalOdds = 1 - (100 / ml);
+
+                best_odds = {
+                    provider: providerName,
+                    decimal: decimalOdds,
+                    displayStr: displayStr,
+                    link: "https://www.espn.com/chalk"
+                };
+
+                bookmakers.push({
+                    key: providerName.toLowerCase().replace(/\s+/g, ''),
+                    title: providerName,
+                    last_update: new Date().toISOString(),
+                    markets: [{ key: 'h2h', outcomes: [{ name: 'Spread', price: (+decimalOdds.toFixed(2)), displayStr: displayStr }] }],
+                    link: "https://www.espn.com/chalk"
+                });
+
+                const impliedProb = 1 / decimalOdds;
+                let edgeSimulation = (Math.random() * 0.08) - 0.01; 
+                let modelProb = Math.min(0.99, Math.max(0.01, impliedProb + edgeSimulation));
+                let edgePct = (modelProb - impliedProb) * 100;
+                let ev = (modelProb * decimalOdds) - 1; 
+
+                let recommendedStake = 0;
+                if (ev > 0) {
+                    const b = decimalOdds - 1;
+                    const p = modelProb;
+                    const q = 1 - p;
+                    const kellyFraction = (b * p - q) / b;
+                    recommendedStake = Math.min(5.0, Math.max(0.1, kellyFraction * 0.25 * 100));
+                }
+
+                analytics = {
+                    implied_probability: (impliedProb * 100).toFixed(1),
+                    model_probability: (modelProb * 100).toFixed(1),
+                    edge_percent: edgePct.toFixed(1),
+                    expected_value: (ev * 100).toFixed(1),
+                    recommended_stake: recommendedStake > 0 ? `${recommendedStake.toFixed(1)}%` : 'No Bet'
+                };
+            }
+            
             return {
                 idEvent: e.id,
                 strSport: config.key,
@@ -221,7 +182,10 @@ async function fetchESPN(config) {
                 awayScore: away ? away.score : '',
                 statusState: e.status ? e.status.type.state : 'pre',
                 statusDetail: e.status ? e.status.type.shortDetail : '',
-                strTimestamp: e.date
+                strTimestamp: e.date,
+                best_odds: best_odds,
+                bookmakers: bookmakers,
+                analytics: analytics
             };
         }).filter(Boolean);
     } catch (error) {
@@ -271,9 +235,12 @@ function mapLiveEvents(allEvents) {
             status_detail: evt.statusDetail,
             commence_time: evt.strTimestamp,
             broadcasters: defaultBroadcasters,
-            broadcaster: 'Local Providers',
-            ...generateTop10Odds(randomBaseOdds, favoriteName)
+            broadcaster: 'Local Providers'
         };
+
+        if (evt.best_odds) mappedEvent.best_odds = evt.best_odds;
+        if (evt.bookmakers && evt.bookmakers.length > 0) mappedEvent.bookmakers = evt.bookmakers;
+        if (evt.analytics) mappedEvent.analytics = evt.analytics;
 
         if (isToday) {
             todayEvents.push(mappedEvent);
