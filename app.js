@@ -271,7 +271,7 @@ function createTodayCard(match) {
     }
 
     return `
-        <div class="match-card today-card">
+        <div class="match-card today-card" data-sport="${match.sport_key ? match.sport_key.toLowerCase() : ''}">
             <div class="poster-bg" style="background-image: url('${getPosterForSport(match.sport_title)}')"></div>
             <div class="match-header">
                 <div class="league-sport">
@@ -323,7 +323,7 @@ function createForecastCard(event) {
     }
 
     return `
-        <div class="forecast-card">
+        <div class="forecast-card" data-sport="${event.sport_key ? event.sport_key.toLowerCase() : ''}">
             <div class="poster-bg" style="background-image: url('${getPosterForSport(event.sport_title)}')"></div>
             <div class="f-date">
                 <span class="f-day">${dayDate}</span>
@@ -687,7 +687,17 @@ function processIntent(text) {
         
         const cards = document.querySelectorAll('.match-card, .forecast-card');
         cards.forEach(card => {
-            if (card.textContent.toLowerCase().includes(intent)) {
+            const dataSport = card.getAttribute('data-sport') || '';
+            if (card.textContent.toLowerCase().includes(intent) || dataSport.includes(intent.replace('football', 'american football'))) {
+                card.style.display = '';
+            } else if (intent === 'football' && dataSport.includes('american football')) {
+                // handle the 'football' button triggering American Football
+                card.style.display = '';
+            } else if (intent === 'football' && dataSport.includes('soccer') && window.location.hostname.includes('uk')) {
+                card.style.display = '';
+            } else if (intent === 'soccer' && dataSport.includes('soccer')) {
+                card.style.display = '';
+            } else if (dataSport.includes(intent)) {
                 card.style.display = '';
             } else {
                 card.style.display = 'none';
