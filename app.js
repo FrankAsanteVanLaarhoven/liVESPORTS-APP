@@ -184,7 +184,7 @@ function createBroadcasterCard(broadcaster) {
             ${broadcaster.hasFreeTrial ? '<div class="free-trial-badge">✨ Free Trial Available</div>' : ''}
             
             <div class="b-actions">
-                <a href="${broadcaster.watchLink}" target="_blank" rel="noopener noreferrer" class="btn btn-primary compact-btn">
+                <a href="${broadcaster.watchLink === '#' ? 'javascript:void(0)' : broadcaster.watchLink}" ${broadcaster.watchLink === '#' ? `onclick="alert('Live Stream Integration Coming Soon!')"` : `target="_blank" rel="noopener noreferrer"`} class="btn btn-primary compact-btn">
                     Watch Stream
                 </a>
             </div>

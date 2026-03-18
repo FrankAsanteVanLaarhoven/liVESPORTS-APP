@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 
 function createWindow () {
@@ -9,7 +9,16 @@ function createWindow () {
       nodeIntegration: true,
       contextIsolation: false
     },
-    icon: path.join(__dirname, 'icon.png') // Note: requires an icon file to be perfectly native
+    icon: path.join(__dirname, 'icon.png')
+  });
+
+  // Force all external links to open in the user's default native browser (Chrome/Safari)
+  // Prevents the horrible bug where the dashboard duplicates itself into a child window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   // Violently clear the Electron cache before loading so updates are instant
