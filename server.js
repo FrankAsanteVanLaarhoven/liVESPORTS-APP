@@ -697,6 +697,9 @@ app.get('/api/teams/:id/players', async (req, res) => {
 
 app.get('/api/teams', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         const teams = await dbApi.getAllTeams();
         res.json(teams);
     } catch (error) {
@@ -716,9 +719,30 @@ app.post('/api/players/update-status', async (req, res) => {
     }
 });
 
+app.get('/api/ledger', async (req, res) => {
+    try {
+        const ledger = await dbApi.getLedger();
+        res.json(ledger);
+    } catch (error) {
+        console.error("Ledger Fetch Error:", error);
+        res.status(500).json({ error: "Failed to fetch ledger" });
+    }
+});
+
+app.post('/api/ledger', async (req, res) => {
+    try {
+        const { matchId, selection, odds, trueProb, edge, stake } = req.body;
+        const result = await dbApi.insertLedger(matchId, selection, odds, trueProb, edge, stake);
+        res.json(result);
+    } catch (error) {
+        console.error("Ledger Insert Error:", error);
+        res.status(500).json({ error: "Failed to log autonomous bet" });
+    }
+});
+
 app.post('/api/simulate-lineup', async (req, res) => {
     try {
-        const { homeTeamId, awayTeamId, homeStartingIds, awayStartingIds } = req.body;
+        const { homeTeamId, awayTeamId, homeStartingIds, awayStartingIds, liveTime = 0, homeScore = 0, awayScore = 0 } = req.body;
         
         let baseHomeElo = BASE_ELO + HOME_ADVANTAGE_ELO; 
         let baseAwayElo = BASE_ELO;
@@ -754,9 +778,40 @@ app.post('/api/simulate-lineup', async (req, res) => {
         const deltaR = adjHomeElo - adjAwayElo;
         const a = 0.3;
         const b = 0.003;
-        const mu_home = Math.exp(a + b * deltaR);
-        const mu_away = Math.exp(a - b * deltaR);
-        const probs = outcome_probs(mu_home, mu_away);
+        const mu_home_base = Math.exp(a + b * deltaR);
+        const mu_away_base = Math.exp(a - b * deltaR);
+
+        // Phase 16: Exponential Time Decay (Expected Goals remaining)
+        const fractionRemaining = Math.max(0, (90 - liveTime) / 90);
+        const mu_home = mu_home_base * fractionRemaining;
+        const mu_away = mu_away_base * fractionRemaining;
+        
+        let pHomeWin = 0, pDraw = 0, pAwayWin = 0;
+        
+        if (fractionRemaining <= 0) {
+            if (homeScore > awayScore) pHomeWin = 1;
+            else if (homeScore === awayScore) pDraw = 1;
+            else pAwayWin = 1;
+        } else {
+            // Joint Poisson matrix for remaining outcomes
+            for (let h = 0; h <= 8; h++) {
+                for (let a_goals = 0; a_goals <= 8; a_goals++) {
+                    const prob = (Math.pow(mu_home, h) * Math.exp(-mu_home) / factorial(h)) * 
+                                 (Math.pow(mu_away, a_goals) * Math.exp(-mu_away) / factorial(a_goals));
+                    
+                    const finalHome = homeScore + h;
+                    const finalAway = awayScore + a_goals;
+                    
+                    if (finalHome > finalAway) pHomeWin += prob;
+                    else if (finalHome === finalAway) pDraw += prob;
+                    else pAwayWin += prob;
+                }
+            }
+        }
+        
+        // Normalize rounding errors
+        const sumProbs = pHomeWin + pDraw + pAwayWin;
+        const probs = { p_home: pHomeWin/sumProbs, p_draw: pDraw/sumProbs, p_away: pAwayWin/sumProbs };
         
         res.json({
             baseline: { homeExpectedValue, awayExpectedValue },
@@ -845,6 +900,76 @@ app.post('/api/pinnacle/v2/bets/place', (req, res) => {
         res.status(500).json({"status": "ERROR"});
     }
 });
+
+// --- PHASE 16: THE AUTONOMOUS PAPER-TRADING DAEMON ---
+const BANKROLL = 10000;
+async function calculateMatchProbabilities(homeTeamId, awayTeamId) {
+    let baseHomeElo = BASE_ELO + HOME_ADVANTAGE_ELO; 
+    let baseAwayElo = BASE_ELO;
+    
+    const [homeRoster, awayRoster] = await Promise.all([
+        dbApi.getPlayersByTeam(homeTeamId),
+        dbApi.getPlayersByTeam(awayTeamId)
+    ]);
+    
+    // Default Top 11 Expectancy
+    const homeExpectedValue = [...homeRoster].sort((a,b)=>b.engine_rating - a.engine_rating).slice(0,11).reduce((s,p)=>s+p.engine_rating,0);
+    const awayExpectedValue = [...awayRoster].sort((a,b)=>b.engine_rating - a.engine_rating).slice(0,11).reduce((s,p)=>s+p.engine_rating,0);
+
+    // Delta compared to a generic baseline of 850 (~77 avg rating * 11)
+    let adjHomeElo = baseHomeElo + ((homeExpectedValue - 850) * 1);
+    let adjAwayElo = baseAwayElo + ((awayExpectedValue - 850) * 1);
+    
+    const deltaR = adjHomeElo - adjAwayElo;
+    const a = 0.3;
+    const b = 0.003;
+    const mu_home = Math.exp(a + b * deltaR);
+    const mu_away = Math.exp(a - b * deltaR);
+    return outcome_probs(mu_home, mu_away); 
+}
+
+function startAutonomousTradingDaemon() {
+    console.log("🤖 Autonomous Trading Daemon Initialized (Scanning for +5% EV Kelly Edges)...");
+    
+    setInterval(async () => {
+        try {
+            const matches = await dbApi.getEPLFixtures();
+            if(!matches) return;
+            
+            for(let m of matches) {
+                if (m.best_home_odds > 0) {
+                    const probs = await calculateMatchProbabilities(m.home_team_id, m.away_team_id);
+                    const trueProb = probs.p_home;
+                    const odds = m.best_home_odds;
+                    const edge = (trueProb * odds) - 1;
+                    
+                    if (edge > 0.05) {
+                        // Kelly Criterion Allocation: f* = (bp - q) / b (where b is net odds)
+                        const b = odds - 1;
+                        let kellyFraction = (trueProb * (b + 1) - 1) / b;
+                        
+                        // Yield fractional kelly (Quarter Kelly) for safety algorithm
+                        kellyFraction = kellyFraction * 0.25; 
+                        if (kellyFraction > 0.05) kellyFraction = 0.05; // Cap at 5% of Bankroll
+                        if (kellyFraction < 0) continue;
+                        
+                        const stake = BANKROLL * kellyFraction;
+                        
+                        await dbApi.insertLedger(
+                            m.match_id, 
+                            m.home_team + ' ML', 
+                            odds, 
+                            trueProb, 
+                            edge, 
+                            stake
+                        );
+                    }
+                }
+            }
+        } catch(e) { console.error("AutoBettor Loop Error:", e); }
+    }, 15000); // Poll Live matches every 15s
+}
+startAutonomousTradingDaemon();
 
 // Start Server safely matching dynamic Node deployments
 app.listen(process.env.PORT || 3000, () => {

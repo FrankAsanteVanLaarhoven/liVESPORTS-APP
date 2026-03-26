@@ -594,6 +594,10 @@ function initBetVerifier() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    fetchOddsData();
+    fetchEPLSync();
+    fetchAndRenderLedger();
+    
     setInterval(fetchOddsData, 5000); // 5 sec heartbeat
     setInterval(fetchEPLSync, 3000);  // Sync EPL fast 
     setInterval(fetchAndRenderLedger, 4000); // Stream Execution Fill Logs
@@ -750,7 +754,15 @@ async function fetchEPLSync() {
                 evString = `+${(ev*100).toFixed(1)}% Edge`;
                 if (ev > 0.05) {
                     evColor = 'var(--success)';
-                    recStake = '0.25x Kelly';
+                    
+                    // Dynamic Kelly Criterion
+                    const b = rawOdds - 1;
+                    let kF = (p_home_cal * (b + 1) - 1) / b;
+                    kF = kF * 0.25; // 0.25 fractional safe Kelly
+                    if (kF > 0.05) kF = 0.05; // 5% Bankroll Max Drawdown
+                    const stakeAmnt = 10000 * kF;
+                    
+                    recStake = `<span style="color:#10b981">$${stakeAmnt.toFixed(2)}</span> <span style="font-size:0.75rem;color:var(--text-secondary)">(Kelly)</span>`;
                     rowHighlight = 'background: rgba(16, 185, 129, 0.05);';
                 } else if (ev > 0) {
                     evColor = '#fbbf24';
@@ -794,6 +806,13 @@ async function openMatchModal(match_id, home, away, status, p_home_cal, best_odd
     
     document.getElementById('diag-teams').textContent = `${home} vs ${away} (ID: ${match_id})`;
     document.getElementById('diag-status').textContent = status;
+    
+    // Multimedia Video Stream Router
+    const streamSearchQuery = encodeURIComponent(`${home} vs ${away} live soccer match stream`);
+    const streamBtn = document.getElementById('btn-live-stream');
+    if (streamBtn) {
+        streamBtn.href = `https://www.youtube.com/results?search_query=${streamSearchQuery}`;
+    }
     
     if (best_odds > 0) {
         const ev = (p_home_cal * best_odds) - 1;
@@ -1430,6 +1449,11 @@ async function triggerSandboxSimulation() {
     const homeTeamId = document.getElementById('sandbox-home-id').value;
     const awayTeamId = document.getElementById('sandbox-away-id').value;
     
+    // Phase 16: Time-Decay Metrics
+    const liveTime = parseInt(document.getElementById('sandbox-live-time').value) || 0;
+    const homeScore = parseInt(document.getElementById('sandbox-home-score').value) || 0;
+    const awayScore = parseInt(document.getElementById('sandbox-away-score').value) || 0;
+    
     const homeStartingIds = Array.from(document.querySelectorAll('.roster-chk-home:checked')).map(cb => cb.value);
     const awayStartingIds = Array.from(document.querySelectorAll('.roster-chk-away:checked')).map(cb => cb.value);
     
@@ -1438,7 +1462,7 @@ async function triggerSandboxSimulation() {
         const res = await fetch(`http://${hostname}:3000/api/simulate-lineup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ homeTeamId, awayTeamId, homeStartingIds, awayStartingIds })
+            body: JSON.stringify({ homeTeamId, awayTeamId, homeStartingIds, awayStartingIds, liveTime, homeScore, awayScore })
         });
         
         const data = await res.json();
@@ -1465,19 +1489,53 @@ async function triggerSandboxSimulation() {
     }
 }
 
-// --- PHASE 12: GLOBAL ENTITY MANAGEMENT DASHBOARD ---
+// --- PHASE 12/15: GLOBAL ENTITY MANAGEMENT DASHBOARD ---
 document.addEventListener('DOMContentLoaded', () => {
     fetchGlobalTeams();
     
-    const teamSelector = document.getElementById('global-team-selector');
-    if (teamSelector) {
-        teamSelector.addEventListener('change', (e) => {
-            if (e.target.value) {
-                renderGlobalRoster(e.target.value);
-            } else {
+    const teamInput = document.getElementById('global-team-input');
+    if (teamInput) {
+        teamInput.addEventListener('change', (e) => {
+            const val = e.target.value.trim().toLowerCase();
+            const teamId = window.globalTeamMap ? window.globalTeamMap[val] : null;
+            if (teamId) {
+                renderGlobalRoster(teamId);
+            } else if (val === '') {
                 document.getElementById('rosters-grid').innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">Select a team to display evaluated personnel.</div>';
             }
         });
+    }
+
+    const voiceBtn = document.getElementById('btn-voice-search');
+    const voiceStatus = document.getElementById('voice-status');
+    if (voiceBtn && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.lang = 'en-US';
+
+        voiceBtn.addEventListener('click', () => {
+            voiceStatus.style.display = 'block';
+            voiceBtn.style.color = '#ef4444'; 
+            recognition.start();
+        });
+
+        recognition.onresult = (e) => {
+            const transcript = e.results[0][0].transcript;
+            if(teamInput) {
+                teamInput.value = transcript;
+                teamInput.dispatchEvent(new Event('change'));
+            }
+            voiceStatus.style.display = 'none';
+            voiceBtn.style.color = 'var(--accent)';
+        };
+
+        recognition.onend = () => {
+            voiceStatus.style.display = 'none';
+            voiceBtn.style.color = 'var(--accent)';
+        };
+    } else if (voiceBtn) {
+        voiceBtn.style.display = 'none';
     }
 });
 
@@ -1488,14 +1546,19 @@ async function fetchGlobalTeams() {
         if (!res.ok) return;
         const teams = await res.json();
         
-        const selector = document.getElementById('global-team-selector');
-        if (!selector) return;
+        const datalist = document.getElementById('global-team-list');
+        if (!datalist) return;
         
-        let html = '<option value="">-- Choose a Franchise to Inspect --</option>';
+        window.globalTeamMap = {};
+        let html = '';
         teams.forEach(t => {
-            html += `<option value="${t.team_id}">${t.name} (ID: ${t.team_id})</option>`;
+            const displayName = `${t.name} (ID: ${t.team_id})`;
+            html += `<option value="${displayName}"></option>`;
+            // Map both the exact display name and the pure team name
+            window.globalTeamMap[displayName.toLowerCase()] = t.team_id;
+            window.globalTeamMap[t.name.toLowerCase()] = t.team_id;
         });
-        selector.innerHTML = html;
+        datalist.innerHTML = html;
         
     } catch (e) {
         console.error('Failed to load global teams fetch:', e);
@@ -1529,11 +1592,39 @@ async function renderGlobalRoster(teamId) {
                 </div>
             </div>
         `;
+        const activePlayers = players.filter(p => p.status === 'Active');
+        const teamEloVal = activePlayers.sort((a,b)=>b.engine_rating - a.engine_rating).slice(0, 11).reduce((s, p) => s + p.engine_rating, 0); 
+        const teamElo = 1500 + ((teamEloVal - 850) * 1);
+        const teamXG = Math.max(0.5, 1.4 + ((teamElo - 1500) / 100));
+
+        const posDistribution = { 'Forward': 0.45, 'Midfielder': 0.15, 'Defender': 0.04, 'Goalkeeper': 0.005 };
+
         players.forEach(p => {
             const isActive = p.status === 'Active';
             const statusColor = isActive ? 'var(--success)' : '#ef4444';
             const bgClass = isActive ? 'rgba(0, 240, 255, 0.05)' : 'rgba(239, 68, 68, 0.05)';
             const invertedStatus = isActive ? 'Injured' : 'Active';
+            
+            let propHtml = '';
+            if (isActive) {
+                const posStr = p.position.toLowerCase();
+                const posKey = posStr.includes('forward') || posStr.includes('wing') || posStr.includes('striker') || posStr.includes('attack') ? 'Forward' :
+                               posStr.includes('mid') ? 'Midfielder' :
+                               posStr.includes('def') || posStr.includes('back') ? 'Defender' : 'Goalkeeper';
+                
+                const ratingMultiplier = Math.max(0.2, p.engine_rating / 77);
+                const playerXG = (teamXG * posDistribution[posKey]) * ratingMultiplier;
+                const probScore = 1 - Math.exp(-playerXG); // Poisson P(X >= 1)
+                const fairOdds = 1 / probScore;
+                
+                propHtml = `
+                <div style="margin-top: 0.8rem; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 4px; padding: 0.5rem; text-align: center;">
+                    <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:1px; margin-bottom: 0.2rem;">Anytime Goalscorer</div>
+                    <div style="font-weight:bold; color:var(--success); font-size: 1.1rem;">${(probScore*100).toFixed(1)}% <span style="font-size:0.8rem; color:#fff">(@ ${(fairOdds).toFixed(2)})</span></div>
+                </div>`;
+            } else {
+                propHtml = `<div style="margin-top: 0.8rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; padding: 0.5rem; text-align: center; color: #ef4444; font-size: 0.85rem; font-style: italic;">Prop Markets Suspended (Injured)</div>`;
+            }
             
             html += `
                 <div style="background: ${bgClass}; border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.8rem; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
@@ -1546,6 +1637,8 @@ async function renderGlobalRoster(teamId) {
                             WAR: <span style="color: var(--accent);">${p.engine_rating.toFixed(1)}</span>
                         </div>
                     </div>
+                    
+                    ${propHtml}
                     
                     <div style="margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
                         <div style="font-size: 0.85rem;">Status: <strong style="color: ${statusColor};">${p.status}</strong></div>

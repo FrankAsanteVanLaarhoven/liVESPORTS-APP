@@ -9,7 +9,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     } else {
         console.log('✅ Connected to SQLite database (Relational Schema).');
         db.run('PRAGMA foreign_keys = ON;');
-        
+
         db.serialize(() => {
             // 1. Core Tables
             db.run(`CREATE TABLE IF NOT EXISTS leagues (
@@ -90,7 +90,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 FOREIGN KEY (match_id) REFERENCES matches(match_id)
             )`);
             db.run(`CREATE INDEX IF NOT EXISTS idx_model_predictions_model ON model_predictions(model_name)`);
-            
+
             db.run(`CREATE TABLE IF NOT EXISTS bets_simulated (
                 bet_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 match_id INTEGER NOT NULL,
@@ -110,7 +110,20 @@ const db = new sqlite3.Database(dbPath, (err) => {
             )`);
             db.run(`CREATE INDEX IF NOT EXISTS idx_bets_model ON bets_simulated(model_name, tag)`);
 
-            // 4. Calibration
+            // 4. Autonomous Ledger (Phase 16)
+            db.run(`CREATE TABLE IF NOT EXISTS ledger (
+                order_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL,
+                selection TEXT NOT NULL,
+                odds REAL NOT NULL,
+                true_prob REAL NOT NULL,
+                edge REAL NOT NULL,
+                stake REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(match_id) REFERENCES matches(match_id)
+            )`);
+
+            // 5. Calibration
             db.run(`CREATE TABLE IF NOT EXISTS calibration_bins (
                 calib_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_name TEXT NOT NULL,
@@ -165,11 +178,30 @@ const dbApi = {
             const matchId = parseInt(event.idEvent) || Math.floor(Math.random() * 999999);
             
             // 1. Insert Teams (Ignore if exist by name via UNIQUE constraint)
-            let homeName = event.strHomeTeam || 'TBD';
-            let awayName = event.strAwayTeam || 'TBD';
+            let homeName = event.strHomeTeam || event.home_team || 'TBD';
+            let awayName = event.strAwayTeam || event.away_team || 'TBD';
+            let sportKey = (event.strSport || event.sport_title || '').toUpperCase();
             
-            db.run(`INSERT OR IGNORE INTO teams (name, country) VALUES (?, 'Unknown')`, [homeName], function(err) {
-                db.run(`INSERT OR IGNORE INTO teams (name, country) VALUES (?, 'Unknown')`, [awayName], function(err2) {
+            const getShort = (n) => {
+                let w = n.replace(/[^a-zA-Z\s]/g, '').split(' ');
+                if (w.length >= 3) return (w[0][0] + w[1][0] + w[2][0]).toUpperCase();
+                if (w.length === 2 && w[0].length > 1 && w[1].length > 0) return (w[0].substring(0,2) + w[1][0]).toUpperCase();
+                if (w.length === 1 && w[0].length >= 3) return w[0].substring(0,3).toUpperCase();
+                return n.substring(0,3).toUpperCase();
+            };
+            
+            let homeShort = getShort(homeName);
+            let awayShort = getShort(awayName);
+
+            let inferredCountry = 'Unknown';
+            if (sportKey.includes('NFL') || sportKey.includes('BASKETBALL') || sportKey.includes('NBA') || sportKey.includes('BASEBALL') || sportKey.includes('MLB') || sportKey.includes('NHL')) {
+                inferredCountry = 'USA';
+            } else if (sportKey.includes('FOOTBALL') || sportKey.includes('SOCCER') || sportKey.includes('EPL') || sportKey.includes('PREMIER LEAGUE')) {
+                inferredCountry = 'England';
+            }
+            
+            db.run(`INSERT OR IGNORE INTO teams (name, short_name, country) VALUES (?, ?, ?)`, [homeName, homeShort, inferredCountry], function(err) {
+                db.run(`INSERT OR IGNORE INTO teams (name, short_name, country) VALUES (?, ?, ?)`, [awayName, awayShort, inferredCountry], function(err2) {
                     
                     // 2. Retrieve Team IDs
                     db.get(`SELECT team_id FROM teams WHERE name = ?`, [homeName], (err3, homeRow) => {
@@ -183,12 +215,11 @@ const dbApi = {
                                 homeGoals = parseInt(event.homeScore) || 0;
                                 awayGoals = parseInt(event.awayScore) || 0;
                             }
-                            
-                            const sql = `INSERT OR IGNORE INTO matches (match_id, season_id, matchday, utc_date, status, home_team_id, away_team_id, home_goals, away_goals, venue) 
-                                         VALUES (?, 101, 1, ?, ?, ?, ?, ?, ?, 'Unknown')`;
+                            const sql = `INSERT OR IGNORE INTO matches(match_id, season_id, matchday, utc_date, status, home_team_id, away_team_id, home_goals, away_goals, venue) 
+                                         VALUES(?, 101, 1, ?, ?, ?, ?, ?, ?, 'Unknown')`;
                             db.run(sql, [matchId, event.strTimestamp, event.statusState, hId, aId, homeGoals, awayGoals], function(err5) {
                                 // Update score if match exists
-                                db.run(`UPDATE matches SET status = ?, home_goals = ?, away_goals = ? WHERE match_id = ?`, 
+                                db.run(`UPDATE matches SET status = ?, home_goals = ?, away_goals = ? WHERE match_id = ? `, 
                                     [event.statusState, homeGoals, awayGoals, matchId], (err6) => {
                                     resolve();
                                 });
@@ -204,8 +235,8 @@ const dbApi = {
         return new Promise((resolve, reject) => {
             const matchId = parseInt(eventId) || Math.floor(Math.random() * 999999);
             const ts = new Date().toISOString();
-            const sql = `INSERT INTO odds (match_id, bookmaker_id, market_id, outcome, decimal_odds, ts_collected, is_closing) 
-                         VALUES (?, 1, 1, 'HOME', ?, ?, 0)`;
+            const sql = `INSERT INTO odds(match_id, bookmaker_id, market_id, outcome, decimal_odds, ts_collected, is_closing) 
+                         VALUES(?, 1, 1, 'HOME', ?, ?, 0)`;
             db.run(sql, [matchId, decimalOdds, ts], function(err) {
                 if (err && err.message.includes('FOREIGN KEY')) return resolve(); // Swallow FK bounds in demo
                 resolve();
@@ -216,10 +247,10 @@ const dbApi = {
     getOddsHistory: (eventId) => {
         return new Promise((resolve, reject) => {
             const matchId = parseInt(eventId) || 0;
-            const sql = `SELECT ts_collected as timestamp, decimal_odds, 
-                         -- Mock expected value so frontend ticker animation still runs
-                         ((decimal_odds / 2) - 0.5) * 100 as expected_value, 
-                         0 as edge_percent 
+            const sql = `SELECT ts_collected as timestamp, decimal_odds,
+                --Mock expected value so frontend ticker animation still runs
+                    ((decimal_odds / 2) - 0.5) * 100 as expected_value,
+                0 as edge_percent 
                          FROM odds WHERE match_id = ? ORDER BY ts_collected ASC`;
             db.all(sql, [matchId], (err, rows) => {
                 if (err) return reject(err);
@@ -233,8 +264,8 @@ const dbApi = {
             const matchId = parseInt(event.idEvent) || Math.floor(Math.random() * 999999);
             const ts = new Date().toISOString();
             
-            const sql = `INSERT INTO bets_simulated (match_id, model_name, bookmaker_id, market_id, outcome, decimal_odds, p_cal, ev_conservative, tag, result, ts_decision)
-                         VALUES (?, 'elo_poisson_v1', 1, 1, 'HOME', ?, ?, ?, ?, null, ?)`;
+            const sql = `INSERT INTO bets_simulated(match_id, model_name, bookmaker_id, market_id, outcome, decimal_odds, p_cal, ev_conservative, tag, result, ts_decision)
+                         VALUES(?, 'elo_poisson_v1', 1, 1, 'HOME', ?, ?, ?, ?, null, ?)`;
                          
             const estimatedPCal = (ev + 1) / odds;
             
@@ -249,13 +280,13 @@ const dbApi = {
         return new Promise((resolve, reject) => {
             const sql = `SELECT 
                             b.ts_decision as timestamp,
-                            t_home.name as home_team,
-                            t_away.name as away_team,
-                            b.decimal_odds,
-                            b.ev_conservative as expected_value,
-                            b.tag as strategy_tier,
-                            (b.decimal_odds - 0.15) as closing_line_value, 
-                            -- Infer stake dynamically based on conservative quarter Kelly for UI display
+                t_home.name as home_team,
+                t_away.name as away_team,
+                b.decimal_odds,
+                b.ev_conservative as expected_value,
+                b.tag as strategy_tier,
+                (b.decimal_odds - 0.15) as closing_line_value,
+                --Infer stake dynamically based on conservative quarter Kelly for UI display
                             MAX(0, ((b.decimal_odds - 1) * b.p_cal - (1 - b.p_cal)) / (b.decimal_odds - 1) * 0.25 * 100) as stake_percent
                          FROM bets_simulated b
                          JOIN matches m ON b.match_id = m.match_id
@@ -277,16 +308,16 @@ const dbApi = {
 
     getEPLFixtures: () => {
         return new Promise((resolve, reject) => {
-            const sql = `SELECT 
-                            m.match_id,
-                            m.utc_date,
-                            m.status,
-                            t_home.name as home_team,
-                            t_away.name as away_team,
-                            t_home.team_id as home_team_id,
-                            t_away.team_id as away_team_id,
-                            (SELECT MAX(decimal_odds) FROM odds WHERE match_id = m.match_id AND outcome = 'HOME') as best_home_odds,
-                            (SELECT MAX(decimal_odds) FROM odds WHERE match_id = m.match_id AND outcome = 'AWAY') as best_away_odds
+            const sql = `SELECT
+            m.match_id,
+                m.utc_date,
+                m.status,
+                t_home.name as home_team,
+                t_away.name as away_team,
+                t_home.team_id as home_team_id,
+                t_away.team_id as away_team_id,
+                (SELECT MAX(decimal_odds) FROM odds WHERE match_id = m.match_id AND outcome = 'HOME') as best_home_odds,
+            (SELECT MAX(decimal_odds) FROM odds WHERE match_id = m.match_id AND outcome = 'AWAY') as best_away_odds
                          FROM matches m
                          JOIN teams t_home ON m.home_team_id = t_home.team_id
                          JOIN teams t_away ON m.away_team_id = t_away.team_id
@@ -305,7 +336,7 @@ const dbApi = {
                 if (err) return reject(err);
                 
                 if (rows.length === 0) {
-                    db.get(`SELECT name, country FROM teams WHERE team_id = ?`, [teamId], (err, teamRow) => {
+                    db.get(`SELECT name, country FROM teams WHERE team_id = ? `, [teamId], (err, teamRow) => {
                         let teamName = teamRow ? teamRow.name : 'Unknown';
                         let teamCountry = teamRow ? teamRow.country : 'Unknown';
                         
@@ -330,7 +361,7 @@ const dbApi = {
                             
                             let playerName = mappedRoster && mappedRoster[i] ? mappedRoster[i] : generateCulturallyAccurateName(teamCountry, pos, i);
                             
-                            db.run(`INSERT OR IGNORE INTO players (team_id, name, position, engine_rating, status) VALUES (?, ?, ?, ?, ?)`, 
+                            db.run(`INSERT OR IGNORE INTO players(team_id, name, position, engine_rating, status) VALUES(?, ?, ?, ?, ?)`, 
                             [teamId, playerName, pos, rating, status], () => {
                                 count++;
                                 if (count === positions.length) {
@@ -357,7 +388,7 @@ const dbApi = {
 
     updatePlayerStatus: (playerId, status) => {
         return new Promise((resolve, reject) => {
-            const sql = `UPDATE players SET status = ? WHERE player_id = ?`;
+            const sql = `UPDATE players SET status = ? WHERE player_id = ? `;
             db.run(sql, [status, playerId], function(err) {
                 if (err) return reject(err);
                 resolve({ changes: this.changes });
@@ -367,6 +398,39 @@ const dbApi = {
 
     seedMockPlayers: () => {
         return Promise.resolve(); // Now handled dynamically per-team
+    },
+
+    getLedger: () => {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT l.*, m.utc_date, t1.name as home_name, t2.name as away_name
+                FROM ledger l
+                JOIN matches m ON l.match_id = m.match_id
+                JOIN teams t1 ON m.home_team_id = t1.team_id
+                JOIN teams t2 ON m.away_team_id = t2.team_id
+                ORDER BY l.timestamp DESC LIMIT 100
+            `;
+            db.all(sql, [], (err, rows) => {
+                if (err) return reject(err);
+                resolve(rows);
+            });
+        });
+    },
+
+    insertLedger: (matchId, selection, odds, trueProb, edge, stake) => {
+        return new Promise((resolve, reject) => {
+            // Deduplication: prevent spamming the exact same edge
+            db.get(`SELECT order_id FROM ledger WHERE match_id = ? AND selection = ? `, [matchId, selection], (err, row) => {
+                if(err) return reject(err);
+                if(row) return resolve({ skipped: true, reason: 'Already purchased this edge' });
+                
+                const sql = `INSERT INTO ledger(match_id, selection, odds, true_prob, edge, stake) VALUES(?, ?, ?, ?, ?, ?)`;
+                db.run(sql, [matchId, selection, odds, trueProb, edge, stake], function(err2) {
+                    if (err2) return reject(err2);
+                    resolve({ order_id: this.lastID, new_bet: true });
+                });
+            });
+        });
     }
 };
 
@@ -425,7 +489,7 @@ function generateCulturallyAccurateName(countryRaw, position, index) {
     const fIdx = (index * 7) % dict.first.length;
     const lIdx = (index * 13) % dict.last.length;
     
-    return `${dict.first[fIdx]} ${dict.last[lIdx]}`;
+    return `${ dict.first[fIdx] } ${ dict.last[lIdx] } `;
 }
 
 module.exports = dbApi;
