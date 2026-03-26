@@ -280,6 +280,7 @@ function createTodayCard(match) {
             <div class="match-header">
                 <div class="league-sport">
                     <span class="sport-tag">${match.sport_title}</span>
+                    <div id="trend-${match.id}" class="trend-container" style="display: inline-block;"></div>
                 </div>
                 <div class="teams">
                     <span class="team">${match.home_team} ${hasScores && match.home_score ? `<span class="score-badge">${match.home_score}</span>` : ''}</span>
@@ -393,6 +394,45 @@ function createParlayCard(parlay) {
     `;
 }
 
+async function fetchOddsHistory(id) {
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const response = await fetch(`http://${hostname}:3000/api/odds/${id}/history`);
+        if (!response.ok) return [];
+        return await response.json();
+    } catch (error) {
+        console.error("Failed to fetch odds history:", error);
+        return [];
+    }
+}
+
+function updateLiveTicker(events) {
+    const ticker = document.getElementById('live-ticker');
+    if (!ticker) return;
+    
+    const liveEvents = events.filter(e => e.status_state === 'in' || e.status_state === 'post');
+    if (liveEvents.length === 0) {
+        ticker.innerHTML = '<div class="ticker-item"><span class="live-pulse">🔴</span> No live matches currently. Checking for updates...</div>';
+        return;
+    }
+
+    let html = '';
+    // Duplicate 3 times for a seamless marquee
+    for (let i = 0; i < 3; i++) {
+        liveEvents.forEach(match => {
+            const hasScores = match.home_score !== '' && match.away_score !== '';
+            const scoreStr = hasScores ? `<span class="ticker-score">${match.home_score} - ${match.away_score}</span>` : 'vs';
+            const oddsStr = match.best_odds ? `<span class="ticker-odds">${match.best_odds.displayStr}</span>` : '';
+            html += `<div class="ticker-item">
+                        <span class="live-pulse">🔴</span>
+                        <span class="ticker-match">${match.home_team} ${scoreStr} ${match.away_team}</span>
+                        ${oddsStr}
+                     </div>`;
+        });
+    }
+    ticker.innerHTML = html;
+}
+
 async function renderDashboard() {
     const todayContainer = document.getElementById('today-container');
     const forecastContainer = document.getElementById('forecast-container');
@@ -409,9 +449,31 @@ async function renderDashboard() {
         return;
     }
 
+    if (data && data.today) {
+        updateLiveTicker(data.today);
+    }
+
     if (todayContainer) {
         if (data.today && data.today.length > 0) {
             todayContainer.innerHTML = data.today.map(createTodayCard).join('');
+            
+            // Fetch and inject odds trends
+            data.today.forEach(async match => {
+                const history = await fetchOddsHistory(match.id);
+                const trendEl = document.getElementById(`trend-${match.id}`);
+                if (trendEl && history && history.length > 1) {
+                    const first = history[0].expected_value;
+                    const last = history[history.length - 1].expected_value;
+                    const diff = last - first;
+                    let trendClass, icon;
+                    if (diff > 0.5) { trendClass = 'trend-up'; icon = '↗️'; }
+                    else if (diff < -0.5) { trendClass = 'trend-down'; icon = '↘️'; }
+                    else { trendClass = 'trend-flat'; icon = '➡️'; }
+                    trendEl.innerHTML = `<span class="odds-trend ${trendClass}">${icon} EV ${diff > 0 ? '+' : ''}${diff.toFixed(1)}%</span>`;
+                } else if (trendEl) {
+                     trendEl.innerHTML = `<span class="odds-trend trend-flat">➡️ EV Stable</span>`;
+                }
+            });
         } else {
             todayContainer.innerHTML = `
                 <div class="match-card today-card">
@@ -532,12 +594,430 @@ function initBetVerifier() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    setInterval(fetchOddsData, 5000); // 5 sec heartbeat
+    setInterval(fetchEPLSync, 3000);  // Sync EPL fast 
+    setInterval(fetchAndRenderLedger, 4000); // Stream Execution Fill Logs
+    
     initWebGL();
     initWebRTC();
     initBetVerifier();
+    initSidebarRouting();
     renderDashboard();
     initEphemeralUI();
+    setupPortfolioSimulator();
 });
+
+function initSidebarRouting() {
+    const navItems = document.querySelectorAll('.sidebar-menu .menu-item');
+    const viewSections = document.querySelectorAll('.view-section');
+
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            // Remove active classes
+            navItems.forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+
+            const targetId = item.getAttribute('data-view');
+            
+            // Hide all views, display target
+            viewSections.forEach(view => {
+                view.classList.remove('active-view');
+            });
+            
+            const targetView = document.getElementById(targetId);
+            if(targetView) targetView.classList.add('active-view');
+        });
+    });
+}
+
+// --- Dynamic Ledger Hook ---
+async function fetchAndRenderLedger() {
+    const tbody = document.getElementById('global-ledger-body');
+    if (!tbody) return;
+    
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/ledger`);
+        if (!res.ok) throw new Error("Bad response");
+        const data = await res.json();
+        
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="padding: 2rem; text-align:center; color:var(--text-secondary)">No execution ledgers found in SQLite tables.</td></tr>';
+            return;
+        }
+
+        let html = '';
+        data.forEach(row => {
+            const date = new Date(row.timestamp).toLocaleString();
+            const edgeClass = row.expected_value > 0 ? 'text-green' : 'text-red';
+            html += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 1rem; color:var(--text-secondary);">${date}</td>
+                    <td style="padding: 1rem; font-weight: bold;">${row.home_team} vs ${row.away_team}</td>
+                    <td style="padding: 1rem; color:#fbbf24; font-family:monospace; font-weight:bold;">${row.decimal_odds.toFixed(2)}</td>
+                    <td style="padding: 1rem; color:var(--accent);">${(row.p_cal * 100).toFixed(1)}%</td>
+                    <td style="padding: 1rem; font-weight:bold;" class="${edgeClass}">${row.expected_value > 0 ? '+' : ''}${(row.expected_value * 100).toFixed(1)}% EV</td>
+                    <td style="padding: 1rem; font-family:monospace;">${row.stake_percent.toFixed(2)}%</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+    } catch (e) {
+        console.error("Ledger fetch error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 2rem; text-align:center; color:var(--danger)">Error connecting to SQLite Ledger Service.</td></tr>';
+    }
+}
+
+// --- Python Python Execution Engine Trigger ---
+async function executeBacktestNode(btn) {
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ INITIALIZING DATAFRAMES...';
+    btn.disabled = true;
+    
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/execute-backtest`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (res.ok) {
+            btn.innerHTML = '✅ BACKTEST PIPELINE EXECUTED';
+            Object.assign(btn.style, { background: 'var(--success)', color: '#000', borderColor: 'var(--success)' });
+            setTimeout(fetchAndRenderLedger, 500);
+        } else {
+            btn.innerHTML = '❌ BACKTEST FAILED: ' + data.message;
+            Object.assign(btn.style, { background: 'var(--danger)', color: '#fff' });
+        }
+    } catch (e) {
+        console.error("Backtest Error:", e);
+        btn.innerHTML = '❌ NODE PIPELINE TIMEOUT';
+        Object.assign(btn.style, { background: 'var(--danger)', color: '#fff' });
+    }
+    
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+    }, 6000);
+}
+
+async function fetchEPLSync() {
+    const container = document.getElementById('epl-container');
+    if (!container) return;
+
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/epl-matches`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const matches = data.fixtures || [];
+
+        if (matches.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 2rem;">No EPL matches found in database.</div>';
+            return;
+        }
+
+        let html = `
+            <div style="overflow-x: auto; background: rgba(0,0,0,0.4); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead style="background: rgba(255,255,255,0.05);">
+                        <tr>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Fixture</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Latest Odds</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Model Fair Prob</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Model EV</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Rec. Stake</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: right;">Micro-Sim</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        matches.forEach(m => {
+            const date = new Date(m.utc_date).toLocaleString();
+            const rawOdds = m.best_home_odds || 0;
+            const homeOddsStr = rawOdds > 0 ? rawOdds.toFixed(2) : 'Awaiting';
+            const p_home_cal = 0.52; 
+            
+            let evString = '-';
+            let evColor = 'var(--text-secondary)';
+            let recStake = 'AVOID';
+            let rowHighlight = '';
+            
+            if (rawOdds > 0) {
+                const ev = (p_home_cal * rawOdds) - 1;
+                evString = `+${(ev*100).toFixed(1)}% Edge`;
+                if (ev > 0.05) {
+                    evColor = 'var(--success)';
+                    recStake = '0.25x Kelly';
+                    rowHighlight = 'background: rgba(16, 185, 129, 0.05);';
+                } else if (ev > 0) {
+                    evColor = '#fbbf24';
+                }
+            }
+
+            const escapedHome = m.home_team.replace(/'/g, "\\'");
+            const escapedAway = m.away_team.replace(/'/g, "\\'");
+
+            html += `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; ${rowHighlight}" 
+                    onmouseover="this.style.background='rgba(255,255,255,0.1)'" 
+                    onmouseout="this.style.background='${rowHighlight}'">
+                    
+                    <td style="padding: 1rem; cursor: pointer;" onclick="openMatchModal(${m.match_id}, '${escapedHome}', '${escapedAway}', '${m.status}', ${p_home_cal}, ${rawOdds})">
+                        <div style="font-weight: 700;">${m.home_team} v ${m.away_team}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${date} | ${m.status}</div>
+                    </td>
+                    <td style="padding: 1rem; color: #fbbf24; font-weight:bold;">${homeOddsStr} <span style="font-size:0.75rem; font-weight:normal; color:var(--text-secondary);">(DK)</span></td>
+                    <td style="padding: 1rem; color: var(--accent); font-weight:bold;">${(p_home_cal*100).toFixed(1)}%</td>
+                    <td style="padding: 1rem; color: ${evColor}; font-weight:bold;">${evString}</td>
+                    <td style="padding: 1rem; font-family: monospace;">${recStake}</td>
+                    <td style="padding: 1rem; text-align: right;">
+                        <button class="btn btn-secondary" style="padding: 0.4rem 0.6rem; font-size: 0.8rem; border-radius: 4px;" onclick="openManagerSandbox(${m.home_team_id || 1}, ${m.away_team_id || 2}, '${escapedHome}', '${escapedAway}')">⚙️ Sandbox</button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table></div>`;
+        container.innerHTML = html;
+        
+    } catch (e) {
+        console.error("EPL sync error", e);
+    }
+}
+
+async function openMatchModal(match_id, home, away, status, p_home_cal, best_odds) {
+    const modal = document.getElementById('match-modal');
+    if (!modal) return;
+    
+    document.getElementById('diag-teams').textContent = `${home} vs ${away} (ID: ${match_id})`;
+    document.getElementById('diag-status').textContent = status;
+    
+    if (best_odds > 0) {
+        const ev = (p_home_cal * best_odds) - 1;
+        document.getElementById('diag-clv').textContent = ev > 0 ? `+${(ev*100).toFixed(1)}% Expected Edge` : 'No Edge';
+        document.getElementById('diag-clv').style.color = ev > 0 ? 'var(--success)' : 'var(--text-secondary)';
+    } else {
+        document.getElementById('diag-clv').textContent = 'Waiting for odds...';
+        document.getElementById('diag-clv').style.color = 'var(--text-secondary)';
+    }
+
+    modal.style.display = 'flex';
+    
+    const chartContainer = document.getElementById('diag-time-series-list');
+    chartContainer.innerHTML = '<div>Fetching history pulses...</div>';
+
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/odds-history/${match_id}`);
+        if(res.ok) {
+            const history = await res.json();
+            if(history.length === 0) {
+                chartContainer.innerHTML = '<div style="color:var(--text-secondary)">No historical ticks recorded yet.</div>';
+                return;
+            }
+            
+            let html = '<div style="display:flex; justify-content:space-between; margin-bottom:0.8rem; padding-bottom:0.5rem; border-bottom:1px solid rgba(255,255,255,0.1); font-weight:bold;"><span>Pulse Time</span><span>Book</span><span>Odds</span></div>';
+            history.forEach(tick => {
+                const date = new Date(tick.timestamp).toLocaleTimeString();
+                html += `<div style="display:flex; justify-content:space-between; padding:0.4rem 0; font-family:monospace; border-bottom:1px dashed rgba(255,255,255,0.05);">
+                    <span style="color:var(--text-secondary)">${date}</span>
+                    <span style="color:#fbbf24">DraftKings (Soft)</span>
+                    <span style="color:var(--accent); font-weight:bold;">${tick.decimal_odds.toFixed(2)}</span>
+                </div>`;
+            });
+            chartContainer.innerHTML = html;
+        } else {
+            chartContainer.innerHTML = '<div style="color:var(--danger)">Failed to load data.</div>';
+        }
+    } catch(e) {
+        chartContainer.innerHTML = '<div style="color:var(--danger)">Connection error.</div>';
+    }
+}
+
+function setupPortfolioSimulator() {
+    // Bind to the new sidebar button ID
+    const btn = document.getElementById('sidebar-btn-portfolio');
+    const modal = document.getElementById('portfolio-modal');
+    const closeBtn = document.getElementById('close-portfolio');
+
+    if (!btn || !modal) return;
+
+    // Attach Monte Carlo Inputs
+    const bankrollSlider = document.getElementById('sim-bankroll');
+    const kellySlider = document.getElementById('sim-kelly');
+    const evSlider = document.getElementById('sim-ev-thresh');
+    
+    // Create an update function with debouncing for smooth sliding
+    let updateTimeout = null;
+    const updateSim = async () => {
+        if(bankrollSlider) document.getElementById('sim-bankroll-val').textContent = `$${parseInt(bankrollSlider.value).toLocaleString()}`;
+        if(kellySlider) document.getElementById('sim-kelly-val').textContent = `${parseFloat(kellySlider.value).toFixed(2)}x`;
+        if(evSlider) document.getElementById('sim-ev-thresh-val').textContent = `${parseFloat(evSlider.value).toFixed(1)}%`;
+        
+        clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(async () => {
+            try {
+                const hostname = window.location.hostname || 'localhost';
+                const req = await fetch(`http://${hostname}:3000/api/simulate-bankroll`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        startingBankroll: bankrollSlider ? bankrollSlider.value : 10000,
+                        kellyMultiplier: kellySlider ? kellySlider.value : 0.25,
+                        evThreshold: evSlider ? evSlider.value : 2.0
+                    })
+                });
+                if (req.ok) {
+                    const data = await req.json();
+                    const cagrEl = document.getElementById('mc-cagr');
+                    cagrEl.textContent = `${data.cagr > 0 ? '+' : ''}${data.cagr.toFixed(1)}%`;
+                    cagrEl.style.color = data.cagr > 0 ? 'var(--success)' : 'var(--danger)';
+                    
+                    document.getElementById('mc-drawdown').textContent = `-${(data.max_drawdown * 100).toFixed(1)}%`;
+                    
+                    const ruinEl = document.getElementById('mc-ruin');
+                    ruinEl.textContent = data.isRuined ? 'Yes' : 'No';
+                    ruinEl.style.color = data.isRuined ? 'var(--danger)' : 'var(--success)';
+
+                    if (data.raw_returns && data.raw_returns.length > 0) {
+                        const simReturns = data.raw_returns;
+                        const histBins = 20;
+                        const minReturn = Math.min(...simReturns);
+                        const maxReturn = Math.max(...simReturns);
+                        const binSize = ((maxReturn - minReturn) / histBins) || 0.01;
+                        
+                        const bins = new Array(histBins).fill(0);
+                        const binLabels = [];
+                        for (let i = 0; i < histBins; i++) {
+                            binLabels.push(`${((minReturn + (i * binSize)) * 100).toFixed(1)}%`);
+                        }
+                        
+                        simReturns.forEach(ret => {
+                            let index = Math.floor((ret - minReturn) / binSize);
+                            if (index >= histBins) index = histBins - 1;
+                            bins[index]++;
+                        });
+
+                        if (window.mcHistChart) window.mcHistChart.destroy();
+                        const histCtx = document.getElementById('mc-histogram').getContext('2d');
+                        window.mcHistChart = new Chart(histCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: binLabels,
+                                datasets: [{
+                                    label: 'Frequency',
+                                    data: bins,
+                                    backgroundColor: 'rgba(16, 185, 129, 0.5)',
+                                    borderColor: 'rgba(16, 185, 129, 1)',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    title: { display: true, text: 'Return Distribution per Bet', color: '#888' }
+                                },
+                                scales: {
+                                    y: { display: false, grid: { display: false } },
+                                    x: { ticks: { color: 'rgba(255,255,255,0.5)', maxTicksLimit: 5 }, grid: { display: false } }
+                                }
+                            }
+                        });
+                    }
+                }
+            } catch(e) { console.error("Sim error", e); }
+        }, 100);
+    };
+    
+    if(bankrollSlider) bankrollSlider.addEventListener('input', updateSim);
+    if(kellySlider) kellySlider.addEventListener('input', updateSim);
+    if(evSlider) evSlider.addEventListener('input', updateSim);
+
+    btn.addEventListener('click', async () => {
+        modal.style.display = 'flex';
+        updateSim(); // Run initial Monte Carlo simulation
+        
+        const tbody = document.getElementById('ledger-body');
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 1rem; text-align: center;">Fetching Ledger...</td></tr>';
+        
+        try {
+            const hostname = window.location.hostname || 'localhost';
+            const req = await fetch(`http://${hostname}:3000/api/ledger`);
+            if (req.ok) {
+                const ledger = await req.json();
+                populateLedger(ledger);
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding: 1rem; text-align: center; color: red;">Failed to fetch ledger.</td></tr>';
+            }
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="6" style="padding: 1rem; text-align: center; color: red;">Error connecting to DB.</td></tr>';
+        }
+    });
+
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+}
+
+function populateLedger(ledger) {
+    const tbody = document.getElementById('ledger-body');
+    const simBets = document.getElementById('sim-bets');
+    const simEv = document.getElementById('sim-ev');
+    const simClv = document.getElementById('sim-clv');
+
+    if (ledger.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 1rem; text-align: center; color: var(--text-secondary);">No bets recorded in SQLite ledger yet. Wait for a live event to trigger an edge.</td></tr>';
+        return;
+    }
+
+    let totalEv = 0;
+    let totalClvDiff = 0;
+    let html = '';
+
+    ledger.forEach(bet => {
+        const d = new Date(bet.timestamp);
+        const timeStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${d.getMinutes()}`;
+        
+        let tierColor = '#fff';
+        if (bet.strategy_tier === "HIGH_CONVICTION") tierColor = 'var(--success)';
+        else if (bet.strategy_tier === "SAFE_TO_PROCEED") tierColor = '#fbbf24';
+
+        const evPct = (bet.expected_value * 100).toFixed(2);
+        const clvStr = bet.closing_line_value ? bet.closing_line_value.toFixed(2) : '-';
+
+        totalEv += bet.expected_value;
+        if (bet.closing_line_value) {
+            totalClvDiff += (bet.decimal_odds - bet.closing_line_value);
+        }
+
+        html += `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.9rem;">
+                <td style="padding: 1rem; color: var(--text-secondary);">${timeStr}</td>
+                <td style="padding: 1rem; font-weight: 500;">
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">${bet.sport}</div>
+                    ${bet.home_team} vs ${bet.away_team}
+                </td>
+                <td style="padding: 1rem; font-weight: 700; color: ${tierColor};">${bet.strategy_tier.replace(/_/g, ' ')}</td>
+                <td style="padding: 1rem;">
+                    <div>Obs: <strong style="color: #fbbf24;">${bet.decimal_odds.toFixed(2)}</strong></div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">CLV: ${clvStr}</div>
+                </td>
+                <td style="padding: 1rem; color: var(--success); font-weight: bold;">+${evPct}%</td>
+                <td style="padding: 1rem; font-family: monospace;">${bet.stake_percent.toFixed(2)}%</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+    simBets.textContent = ledger.length;
+    simEv.textContent = `+${((totalEv / ledger.length) * 100).toFixed(2)}%`;
+    simClv.textContent = `+${(totalClvDiff / ledger.length).toFixed(3)} avg dist`;
+}
 
 // --- SOTA EPHEMERAL UI ENGINE ---
 const PREMIUM_POSTERS = {
@@ -870,3 +1350,234 @@ setTimeout(() => {
     document.getElementById('curr-to')?.addEventListener('change', calculateCurrency);
     fetchExchangeRates();
 }, 200);
+
+// --- PHASE 11: MANAGER SANDBOX (PLAYER LEVEL SIMULATION) ---
+let currentSandboxHomeRoster = [];
+let currentSandboxAwayRoster = [];
+
+async function openManagerSandbox(homeTeamId, awayTeamId, homeName, awayName) {
+    document.getElementById('sandbox-home-name').textContent = homeName + ' (Home)';
+    document.getElementById('sandbox-away-name').textContent = awayName + ' (Away)';
+    document.getElementById('sandbox-home-id').value = homeTeamId;
+    document.getElementById('sandbox-away-id').value = awayTeamId;
+    
+    document.getElementById('sandbox-baseline').textContent = 'Loading...';
+    document.getElementById('sandbox-actual').textContent = 'Loading...';
+    document.getElementById('sandbox-new-odds').textContent = '--';
+    document.getElementById('sandbox-delta-val').textContent = '';
+    
+    document.getElementById('sandbox-modal').style.display = 'flex';
+    
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const [homeRes, awayRes] = await Promise.all([
+            fetch(`http://${hostname}:3000/api/teams/${homeTeamId}/players`),
+            fetch(`http://${hostname}:3000/api/teams/${awayTeamId}/players`)
+        ]);
+        
+        currentSandboxHomeRoster = await homeRes.json();
+        currentSandboxAwayRoster = await awayRes.json();
+        
+        renderRoster('sandbox-home-roster', currentSandboxHomeRoster, true);
+        renderRoster('sandbox-away-roster', currentSandboxAwayRoster, false);
+        
+        triggerSandboxSimulation();
+    } catch(e) {
+        console.error('Error loading Sandbox rosters:', e);
+    }
+}
+
+function renderRoster(containerId, players, isHome) {
+    const container = document.getElementById(containerId);
+    if (!players || players.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-secondary); text-align:center; padding: 2rem;">No player data available.</div>';
+        return;
+    }
+    
+    let html = '';
+    players.forEach((p, index) => {
+        const isStarting = index < 11;
+        const color = isStarting ? (isHome ? 'var(--accent)' : '#ef4444') : 'var(--text-secondary)';
+        const accentBg = isStarting ? (isHome ? 'rgba(0, 240, 255, 0.1)' : 'rgba(239, 68, 68, 0.1)') : 'rgba(255,255,255,0.02)';
+        
+        let statusBadge = '';
+        if (p.status !== 'Active') {
+            statusBadge = `<span style="background: rgba(255,0,0,0.2); color: #ff6b6b; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;">${p.status}</span>`;
+        }
+        
+        html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 0.8rem; background: ${accentBg}; border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; transition: all 0.2s;">
+                <div style="display:flex; align-items:center; gap: 10px;">
+                    <input type="checkbox" id="chk-${p.player_id}" class="roster-chk-${isHome ? 'home' : 'away'}" value="${p.player_id}" ${isStarting ? 'checked' : ''} style="width: 18px; height: 18px; cursor:pointer;" onchange="triggerSandboxSimulation()">
+                    <div>
+                        <div style="font-weight: 600; color: #fff;">${p.name} ${statusBadge}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">${p.position} | WAR: <span style="color: ${color}; font-weight:bold;">${p.engine_rating.toFixed(1)}</span></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+async function triggerSandboxSimulation() {
+    const btn = document.getElementById('btn-recalculate-sandbox');
+    if(btn) {
+        btn.innerHTML = '⏳ CALCULATING WAR...';
+        btn.disabled = true;
+    }
+    
+    const homeTeamId = document.getElementById('sandbox-home-id').value;
+    const awayTeamId = document.getElementById('sandbox-away-id').value;
+    
+    const homeStartingIds = Array.from(document.querySelectorAll('.roster-chk-home:checked')).map(cb => cb.value);
+    const awayStartingIds = Array.from(document.querySelectorAll('.roster-chk-away:checked')).map(cb => cb.value);
+    
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/simulate-lineup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ homeTeamId, awayTeamId, homeStartingIds, awayStartingIds })
+        });
+        
+        const data = await res.json();
+        
+        document.getElementById('sandbox-baseline').innerHTML = `<span style="color:var(--accent)">H: ${data.baseline.homeExpectedValue.toFixed(1)}</span><br><span style="color:#ef4444">A: ${data.baseline.awayExpectedValue.toFixed(1)}</span>`;
+        document.getElementById('sandbox-actual').innerHTML = `<span style="color:var(--accent)">H: ${data.custom.homeActualValue.toFixed(1)}</span><br><span style="color:#ef4444">A: ${data.custom.awayActualValue.toFixed(1)}</span>`;
+        
+        const pHome = (data.probabilities.p_home_cal * 100).toFixed(1);
+        document.getElementById('sandbox-new-odds').textContent = `${pHome}% WIN`;
+        
+        const deltaEdge = data.deltas.homeDelta - data.deltas.awayDelta;
+        const deltaColor = deltaEdge > 0 ? 'var(--success)' : (deltaEdge < 0 ? 'var(--danger)' : 'var(--text-secondary)');
+        const deltaText = deltaEdge > 0 ? '+' + deltaEdge.toFixed(1) : deltaEdge.toFixed(1);
+        
+        document.getElementById('sandbox-delta-val').innerHTML = `Net Positional Delta: <span style="color:${deltaColor}">${deltaText} WAR</span>`;
+        
+    } catch(e) {
+        console.error('Simulation Error:', e);
+    }
+    
+    if(btn) {
+        btn.innerHTML = '🔄 RE-RUN LINEUP SIMULATION';
+        btn.disabled = false;
+    }
+}
+
+// --- PHASE 12: GLOBAL ENTITY MANAGEMENT DASHBOARD ---
+document.addEventListener('DOMContentLoaded', () => {
+    fetchGlobalTeams();
+    
+    const teamSelector = document.getElementById('global-team-selector');
+    if (teamSelector) {
+        teamSelector.addEventListener('change', (e) => {
+            if (e.target.value) {
+                renderGlobalRoster(e.target.value);
+            } else {
+                document.getElementById('rosters-grid').innerHTML = '<div style="color: var(--text-secondary); padding: 1rem;">Select a team to display evaluated personnel.</div>';
+            }
+        });
+    }
+});
+
+async function fetchGlobalTeams() {
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/teams`);
+        if (!res.ok) return;
+        const teams = await res.json();
+        
+        const selector = document.getElementById('global-team-selector');
+        if (!selector) return;
+        
+        let html = '<option value="">-- Choose a Franchise to Inspect --</option>';
+        teams.forEach(t => {
+            html += `<option value="${t.team_id}">${t.name} (ID: ${t.team_id})</option>`;
+        });
+        selector.innerHTML = html;
+        
+    } catch (e) {
+        console.error('Failed to load global teams fetch:', e);
+    }
+}
+
+async function renderGlobalRoster(teamId) {
+    const grid = document.getElementById('rosters-grid');
+    grid.innerHTML = '<div style="color:var(--text-secondary);">Loading Roster Database...</div>';
+    
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/teams/${teamId}/players`);
+        const players = await res.json();
+        
+        if (!players || players.length === 0) {
+            grid.innerHTML = '<div style="color:#ef4444;">No player data returned. The API auto-seeder failed.</div>';
+            return;
+        }
+        
+        let html = `
+            <div style="background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); padding: 1.5rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.8rem; grid-column: 1 / -1; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div style="font-weight: 700; font-size: 1.1rem; color: #ffd700;">Tactical Staff</div>
+                        <div style="color: var(--text-secondary); font-size: 0.85rem;">Role: <span style="color:#fff;">Head Coach / Manager</span></div>
+                    </div>
+                    <div style="background: rgba(0,0,0,0.5); padding: 0.3rem 0.6rem; border-radius: 4px; font-weight: bold; border: 1px solid rgba(255,215,0,0.3); color: #ffd700;">
+                        System: 4-3-3 Attacking
+                    </div>
+                </div>
+            </div>
+        `;
+        players.forEach(p => {
+            const isActive = p.status === 'Active';
+            const statusColor = isActive ? 'var(--success)' : '#ef4444';
+            const bgClass = isActive ? 'rgba(0, 240, 255, 0.05)' : 'rgba(239, 68, 68, 0.05)';
+            const invertedStatus = isActive ? 'Injured' : 'Active';
+            
+            html += `
+                <div style="background: ${bgClass}; border: 1px solid rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.8rem; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <div style="font-weight: 700; font-size: 1.1rem;">${p.name}</div>
+                            <div style="color: var(--text-secondary); font-size: 0.85rem;">Position: <span style="color:#fff;">${p.position}</span></div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.5); padding: 0.3rem 0.6rem; border-radius: 4px; font-weight: bold; border: 1px solid rgba(255,255,255,0.1);">
+                            WAR: <span style="color: var(--accent);">${p.engine_rating.toFixed(1)}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-size: 0.85rem;">Status: <strong style="color: ${statusColor};">${p.status}</strong></div>
+                        <button class="btn btn-secondary" style="padding: 0.3rem 0.8rem; font-size: 0.75rem;" onclick="togglePlayerGlobalStatus(${p.player_id}, '${invertedStatus}', ${teamId})">Mark ${invertedStatus}</button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        grid.innerHTML = html;
+    } catch(e) {
+        console.error('Failed to load roster:', e);
+        grid.innerHTML = '<div style="color:#ef4444;">Error fetching roster API.</div>';
+    }
+}
+
+async function togglePlayerGlobalStatus(playerId, newStatus, teamId) {
+    try {
+        const hostname = window.location.hostname || 'localhost';
+        const res = await fetch(`http://${hostname}:3000/api/players/update-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playerId, status: newStatus })
+        });
+        
+        if (res.ok) {
+            // Re-render the grid instantly to show Wounded/Active mutation
+            renderGlobalRoster(teamId);
+        } else {
+            alert('Failed to update underlying SQLite player record.');
+        }
+    } catch(e) {
+        console.error('Update status error:', e);
+    }
+}

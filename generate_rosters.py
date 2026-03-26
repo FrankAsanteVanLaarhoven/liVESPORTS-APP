@@ -1,0 +1,68 @@
+import json
+
+rosters = {
+    # Premier League
+    "Arsenal": ["David Raya", "William Saliba", "Gabriel Magalhaes", "Oleksandr Zinchenko", "Ben White", "Declan Rice", "Martin Ødegaard", "Kai Havertz", "Bukayo Saka", "Gabriel Martinelli", "Leandro Trossard", "Gabriel Jesus", "Thomas Partey", "Jakub Kiwior", "Aaron Ramsdale"],
+    "Manchester City": ["Ederson", "Ruben Dias", "John Stones", "Josko Gvardiol", "Kyle Walker", "Rodri", "Kevin De Bruyne", "Bernardo Silva", "Phil Foden", "Jeremy Doku", "Erling Haaland", "Julian Alvarez", "Mateo Kovacic", "Manuel Akanji", "Stefan Ortega"],
+    "Liverpool": ["Alisson Becker", "Virgil van Dijk", "Ibrahima Konate", "Andrew Robertson", "Trent Alexander-Arnold", "Alexis Mac Allister", "Dominik Szoboszlai", "Harvey Elliott", "Luis Diaz", "Mohamed Salah", "Darwin Nunez", "Diogo Jota", "Cody Gakpo", "Joe Gomez", "Caoimhin Kelleher"],
+    "Chelsea": ["Đorđe Petrović", "Thiago Silva", "Axel Disasi", "Levi Colwill", "Malo Gusto", "Moises Caicedo", "Enzo Fernandez", "Conor Gallagher", "Cole Palmer", "Raheem Sterling", "Nicolas Jackson", "Mykhailo Mudryk", "Noni Madueke", "Ben Chilwell", "Robert Sanchez"],
+    "Manchester United": ["Andre Onana", "Lisandro Martinez", "Raphael Varane", "Diogo Dalot", "Luke Shaw", "Casemiro", "Kobbie Mainoo", "Bruno Fernandes", "Alejandro Garnacho", "Marcus Rashford", "Rasmus Hojlund", "Antony", "Scott McTominay", "Harry Maguire", "Altay Bayindir"],
+    "Tottenham": ["Guglielmo Vicario", "Cristian Romero", "Micky van de Ven", "Destiny Udogie", "Pedro Porro", "Yves Bissouma", "Pape Matar Sarr", "James Maddison", "Heung-min Son", "Dejan Kulusevski", "Richarlison", "Brennan Johnson", "Rodrigo Bentancur", "Pierre-Emile Hojbjerg", "Fraser Forster"],
+    "Aston Villa": ["Emiliano Martinez", "Pau Torres", "Diego Carlos", "Lucas Digne", "Matty Cash", "Douglas Luiz", "Boubacar Kamara", "John McGinn", "Leon Bailey", "Moussa Diaby", "Ollie Watkins", "Youri Tielemans", "Jacob Ramsey", "Ezri Konsa", "Robin Olsen"],
+    "Newcastle": ["Nick Pope", "Fabian Schar", "Sven Botman", "Kieran Trippier", "Dan Burn", "Bruno Guimaraes", "Sean Longstaff", "Joelinton", "Anthony Gordon", "Miguel Almiron", "Alexander Isak", "Callum Wilson", "Harvey Barnes", "Sandro Tonali", "Martin Dubravka"],
+    
+    # SPL & UK Leagues
+    "Celtic": ["Joe Hart", "Cameron Carter-Vickers", "Liam Scales", "Greg Taylor", "Alistair Johnston", "Callum McGregor", "Matt O'Riley", "Reo Hatate", "Daizen Maeda", "Nicolas Kuhn", "Kyogo Furuhashi", "Adam Idah", "Tomoki Iwata", "Stephen Welsh", "Scott Bain"],
+    "Rangers": ["Jack Butland", "Connor Goldson", "John Souttar", "Borna Barisic", "James Tavernier", "John Lundstram", "Mohamed Diomande", "Todd Cantwell", "Abdallah Sima", "Ross McCausland", "Cyriel Dessers", "Fabio Silva", "Dujon Sterling", "Leon Balogun", "Robby McCrorie"],
+    "Wrexham": ["Arthur Okonkwo", "Eoghan O'Connell", "Max Cleworth", "Thomas O'Connor", "Ryan Barnett", "James McClean", "Andy Cannon", "Elliot Lee", "George Evans", "Paul Mullin", "Ollie Palmer", "Steven Fletcher", "Luke Young", "Will Boyle", "Mark Howard"],
+
+    # Spain (La Liga)
+    "Real Madrid": ["Thibaut Courtois", "Antonio Rüdiger", "Eder Militao", "Ferland Mendy", "Dani Carvajal", "Aurelien Tchouameni", "Toni Kroos", "Federico Valverde", "Jude Bellingham", "Vinicius Junior", "Rodrygo", "Eduardo Camavinga", "Luka Modric", "Brahim Diaz", "Andriy Lunin"],
+    "Barcelona": ["Marc-Andre ter Stegen", "Ronald Araujo", "Pau Cubarsi", "Joao Cancelo", "Jules Kounde", "Andreas Christensen", "Ilkay Gundogan", "Frenkie de Jong", "Pedri", "Lamine Yamal", "Robert Lewandowski", "Raphinha", "Gavi", "Ferran Torres", "Inaki Pena"],
+    "Atletico Madrid": ["Jan Oblak", "Jose Gimenez", "Axel Witsel", "Mario Hermoso", "Nahuel Molina", "Koke", "Rodrigo De Paul", "Marcos Llorente", "Samuel Lino", "Antoine Griezmann", "Alvaro Morata", "Angel Correa", "Memphis Depay", "Saul Niguez", "Horatiu Moldovan"],
+    
+    # Italy (Serie A)
+    "Inter": ["Yann Sommer", "Alessandro Bastoni", "Francesco Acerbi", "Federico Dimarco", "Benjamin Pavard", "Hakan Calhanoglu", "Nicolo Barella", "Henrikh Mkhitaryan", "Matteo Darmian", "Lautaro Martinez", "Marcus Thuram", "Marko Arnautovic", "Davide Frattesi", "Stefan de Vrij", "Emil Audero"],
+    "Juventus": ["Wojciech Szczesny", "Gleison Bremer", "Danilo", "Federico Gatti", "Andrea Cambiaso", "Manuel Locatelli", "Adrien Rabiot", "Weston McKennie", "Filip Kostic", "Federico Chiesa", "Dusan Vlahovic", "Arkadiusz Milik", "Kenan Yildiz", "Timothy Weah", "Mattia Perin"],
+    "AC Milan": ["Mike Maignan", "Fikayo Tomori", "Malick Thiaw", "Theo Hernandez", "Davide Calabria", "Tijjani Reijnders", "Ruben Loftus-Cheek", "Ismael Bennacer", "Rafael Leao", "Christian Pulisic", "Olivier Giroud", "Luka Jovic", "Noah Okafor", "Simon Kjaer", "Marco Sportiello"],
+    "Napoli": ["Alex Meret", "Amir Rrahmani", "Juan Jesus", "Mathias Olivera", "Giovanni Di Lorenzo", "Stanislav Lobotka", "Andre-Frank Zambo Anguissa", "Jens Cajuste", "Khvicha Kvaratskhelia", "Matteo Politano", "Victor Osimhen", "Giacomo Raspadori", "Giovanni Simeone", "Mario Rui", "Pierluigi Gollini"],
+    
+    # Germany (Bundesliga)
+    "Bayern Munich": ["Manuel Neuer", "Matthijs de Ligt", "Kim Min-jae", "Alphonso Davies", "Joshua Kimmich", "Leon Goretzka", "Konrad Laimer", "Jamal Musiala", "Leroy Sane", "Kingsley Coman", "Harry Kane", "Thomas Muller", "Serge Gnabry", "Eric Dier", "Sven Ulreich"],
+    "Bayer Leverkusen": ["Lukas Hradecky", "Jonathan Tah", "Edmond Tapsoba", "Odilon Kossounou", "Alejandro Grimaldo", "Jeremie Frimpong", "Granit Xhaka", "Robert Andrich", "Florian Wirtz", "Jonas Hofmann", "Victor Boniface", "Patrik Schick", "Amine Adli", "Exequiel Palacios", "Matej Kovar"],
+    "Borussia Dortmund": ["Gregor Kobel", "Nico Schlotterbeck", "Mats Hummels", "Ian Maatsen", "Julian Ryerson", "Emre Can", "Marcel Sabitzer", "Julian Brandt", "Jadon Sancho", "Donyell Malen", "Niclas Füllkrug", "Marco Reus", "Karim Adeyemi", "Sébastien Haller", "Alexander Meyer"],
+    
+    # France (Ligue 1)
+    "Paris SG": ["Gianluigi Donnarumma", "Marquinhos", "Lucas Hernandez", "Nuno Mendes", "Achraf Hakimi", "Warren Zaire-Emery", "Vitinha", "Fabian Ruiz", "Kylian Mbappe", "Ousmane Dembele", "Bradley Barcola", "Goncalo Ramos", "Randal Kolo Muani", "Milan Skriniar", "Keylor Navas"],
+    "Marseille": ["Pau Lopez", "Chancel Mbemba", "Leonardo Balerdi", "Quentin Merlin", "Jonathan Clauss", "Geoffrey Kondogbia", "Jordan Veretout", "Amine Harit", "Ismaila Sarr", "Iliman Ndiaye", "Pierre-Emerick Aubameyang", "Faris Moumbagna", "Joaquin Correa", "Samuel Gigot", "Ruben Blanco"],
+
+    # Saudi Pro League
+    "Al-Nassr": ["David Ospina", "Aymeric Laporte", "Abdulelah Al-Amri", "Alex Telles", "Sultan Al-Ghannam", "Marcelo Brozovic", "Otavio", "Seko Fofana", "Sadio Mane", "Talisca", "Cristiano Ronaldo", "Sami Al-Najei", "Abdulrahman Ghareeb", "Ayman Yahya", "Nawaf Al-Aqidi"],
+    "Al-Hilal": ["Yassine Bounou", "Kalidou Koulibaly", "Ali Al-Bulaihi", "Saud Abdulhamid", "Yasser Al-Shahrani", "Ruben Neves", "Sergej Milinkovic-Savic", "Malcom", "Michael", "Salem Al-Dawsari", "Neymar Jr", "Aleksandar Mitrovic", "Salman Al-Faraj", "Mohammed Kanno", "Nawaf Al-Aqidi"],
+    "Al-Ittihad": ["Marcelo Grohe", "Luiz Felipe", "Ahmed Hegazi", "Hassan Kadesh", "Muhannad Al-Shanqeeti", "N'Golo Kante", "Fabinho", "Faisal Al-Ghamdi", "Romarinho", "Igor Coronado", "Karim Benzema", "Abderrazak Hamdallah", "Jota", "Madallah Al-Olayan", "Abdullah Al-Mayouf"],
+    "Al-Ahli": ["Edouard Mendy", "Merih Demiral", "Roger Ibanez", "Ali Majrashi", "Ezgjan Alioski", "Franck Kessie", "Gabri Veiga", "Mohammed Al-Majhad", "Riyad Mahrez", "Allan Saint-Maximin", "Roberto Firmino", "Firas Al-Buraikan", "Sami Al-Najei", "Bassam Al-Hurayji", "Abdulrahman Al-Sanbi"],
+
+    # South America
+    "Boca Juniors": ["Sergio Romero", "Marcos Rojo", "Cristian Lema", "Luis Advincula", "Lautaro Blanco", "Guillermo Fernandez", "Ezequiel Fernandez", "Kevin Zenon", "Cristian Medina", "Miguel Merentiel", "Edinson Cavani", "Luca Langoni", "Dario Benedetto", "Nicolas Figal", "Javier Garcia"],
+    "River Plate": ["Franco Armani", "Paulo Diaz", "Leandro Gonzalez Pirez", "Andres Herrera", "Enzo Diaz", "Rodrigo Aliendro", "Nicolas Fonseca", "Esequiel Barco", "Ignacio Fernandez", "Claudio Echeverri", "Miguel Borja", "Facundo Colidio", "Pablo Solari", "Ramiro Funes Mori", "Ezequiel Centurion"],
+    "Flamengo": ["Agustin Rossi", "Leo Ortiz", "Fabricio Bruno", "Ayrton Lucas", "Guillermo Varela", "Erick Pulgar", "Nicolas De La Cruz", "Giorgian de Arrascaeta", "Everton Cebolinha", "Luiz Araujo", "Pedro", "Gabriel Barbosa", "Gerson", "Leo Pereira", "Matheus Cunha"],
+    "Palmeiras": ["Weverton", "Gustavo Gomez", "Murilo", "Joaquin Piquerez", "Marcos Rocha", "Anibal Moreno", "Ze Rafael", "Raphael Veiga", "Endrick", "Jose Lopez", "Rony", "Richard Rios", "Luan", "Mayke", "Marcelo Lomba"],
+    
+    # MLS USA
+    "Inter Miami": ["Drake Callender", "Tomas Aviles", "Serhiy Kryvtsov", "Jordi Alba", "DeAndre Yedlin", "Sergio Busquets", "Diego Gomez", "Julian Gressel", "Lionel Messi", "Robert Taylor", "Luis Suarez", "Leonardo Campana", "David Ruiz", "Noah Allen", "CJ dos Santos"],
+    "LA Galaxy": ["John McCarthy", "Maya Yoshida", "Martin Caceres", "Julian Aude", "Miki Yamane", "Mark Delgado", "Gaston Brugman", "Riqui Puig", "Joseph Paintsil", "Gabriel Pec", "Dejan Joveljic", "Miguel Berry", "Edwin Cerrillo", "Jalen Neal", "Novak Micovic"],
+    "LAFC": ["Hugo Lloris", "Aaron Long", "Jesus Murillo", "Omar Campos", "Sergi Palencia", "Ilie Sanchez", "Eduard Atuesta", "Timothy Tillman", "Denis Bouanga", "Cristian Olivera", "Mateusz Bogusz", "Tomas Angel", "Ryan Hollingshead", "Maxime Chanot", "David Ochoa"],
+    
+    # Australia (A-League)
+    "Sydney FC": ["Andrew Redmayne", "Jack Rodwell", "Jake Girdwood-Reich", "Jordan Courtney-Perkins", "Rhyan Grant", "Luke Brattan", "Corey Hollman", "Anthony Caceres", "Joe Lolley", "Robert Mak", "Fabio Gomes", "Max Burgess", "Patrick Wood", "Gabriel Lacerda", "Adam Pavlesic"],
+    "Melbourne City": ["Jamie Young", "Curtis Good", "Samuel Souprayen", "Aziz Behich", "Callum Talbot", "Steven Ugarkovic", "Marco Tilio", "Mathew Leckie", "Terry Antonis", "Leo Natel", "Jamie Maclaren", "Tolgay Arslan", "Marin Jakolis", "Alessandro Lopane", "Patrick Beach"],
+    
+    # Denmark
+    "FC Midtjylland": ["Jonas Lössl", "Sverrir Ingi Ingason", "Mads Bech Sörensen", "Paulinho", "Henrik Dalsgaard", "Kristoffer Olsson", "Oliver Sørensen", "Armin Gigovic", "Aral Simsir", "Gue-sung Cho", "Franculino Dju", "Darío Osorio", "Adam Gabriel", "Charles", "Martin Fraisl"],
+    "FC Copenhagen": ["Kamil Grabara", "Denis Vavro", "Scott McKenna", "Elias Jelert", "Peter Ankersen", "Rasmus Falk", "Diogo Goncalves", "Magnus Mattsson", "Mohamed Elyounoussi", "Roony Bardghji", "Elias Achouri", "Andreas Cornelius", "Lukas Lerager", "Christian Sörensen", "Theo Sander"]
+}
+
+with open("real_rosters.json", "w", encoding="utf-8") as f:
+    json.dump(rosters, f, ensure_ascii=False, indent=2)
+
+print("Generated massive global_rosters dictionary mapping!")

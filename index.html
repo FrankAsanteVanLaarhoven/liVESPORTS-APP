@@ -22,7 +22,42 @@
     <!-- WebGL Background Canvas -->
     <canvas id="webgl-canvas"></canvas>
     
+    <!-- MASTER SIDEBAR -->
+    <aside class="master-sidebar">
+        <div class="sidebar-brand">
+            <h2>Nava<span class="accent">Quant</span></h2>
+            <div class="sys-status"><span class="live-pulse"></span> SYSTEM: ARMED</div>
+        </div>
+        
+        <nav class="sidebar-menu" id="main-nav">
+            <button class="menu-item active" data-view="view-live">
+                <span class="icon">📊</span><span class="label">Live Quant Engine</span>
+            </button>
+            <button class="menu-item" data-view="view-backtest">
+                <span class="icon">⏳</span><span class="label">Time Machine</span>
+            </button>
+            <button class="menu-item" data-view="view-ledger">
+                <span class="icon">📖</span><span class="label">Execution Ledger</span>
+            </button>
+            <button class="menu-item" data-view="view-calculators">
+                <span class="icon">🧮</span><span class="label">Calculators</span>
+            </button>
+            <button class="menu-item" data-view="view-rosters">
+                <span class="icon">👕</span><span class="label">Rosters & Staff</span>
+            </button>
+        </nav>
+        
+        <div class="sidebar-footer" style="margin-top:auto">
+            <button id="sidebar-btn-portfolio" class="btn btn-secondary w-100" style="width:100%; font-size: 0.85rem; padding: 0.8rem;">
+                📈 Monte Carlo Risk Sim
+            </button>
+        </div>
+    </aside>
+
+    <div class="main-wrapper">
         <div class="utility-bar">
+            <!-- Legacy Btn Removed, moved to Sidebar -->
+            <div style="margin-right: auto;"></div>
             <div class="util-item" id="weather-widget">🌤️ Fetching Local Weather...</div>
             <div class="util-item" id="world-clock">🌍 Synchronizing Earth...</div>
             <div class="util-item currency-calc">
@@ -45,56 +80,197 @@
                 <div id="google_translate_element"></div>
             </div>
         </div>
-
-        <header style="position: relative;">
-            <h1>Match Day <span class="accent">Live</span></h1>
-            <p>Your portal to official, legal, and high-quality football broadcasts.</p>
-            <button id="btn-install-pwa" class="btn btn-primary" style="position: absolute; top: 0; right: 0; display: none; margin: 10px; z-index: 100;">⬇️ Download SDK / App</button>
-        </header>
-
-        <nav class="sports-nav">
-            <button class="nav-btn active" onclick="handleNavClick('everything', this)">🌟 All Events</button>
-            <button class="nav-btn" onclick="handleNavClick('soccer', this)">⚽ Soccer</button>
-            <button class="nav-btn" onclick="handleNavClick('basketball', this)">🏀 Basketball</button>
-            <button class="nav-btn" onclick="handleNavClick('football', this)">🏈 Football</button>
-            <button class="nav-btn" onclick="handleNavClick('hockey', this)">🏒 Hockey</button>
-            <button class="nav-btn" onclick="handleNavClick('baseball', this)">⚾ Baseball</button>
-            <button class="nav-btn" onclick="handleNavClick('cup', this)">🏆 Cup Matches</button>
-        </nav>
-
-        <!-- UI cleared of all mock simulator elements for absolute purity -->        <main id="dashboard-content">
-
-            <!-- CUSTOM BET VERIFIER -->
-            <section id="custom-bet-verifier" class="event-section calculator-section ephemeral-hidden">
-                <div class="section-header">
-                    <h2>⚖️ Custom Bet Verifier</h2>
-                    <p>Input bookmaker odds to analyze expected value and safety.</p>
+        
+        <!-- Portfolio Simulator Modal -->
+        <div id="portfolio-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+            <div class="modal-content glass-card" style="width: 90%; max-width: 1000px; max-height: 85vh; overflow-y: auto; padding: 2rem; position: relative;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <h2>📈 Monte Carlo Bankroll Simulator</h2>
+                    <button id="close-portfolio" class="btn btn-secondary" style="cursor: pointer;">✖ Close</button>
                 </div>
-                <div class="calculator-panel">
-                    <div class="calc-inputs">
-                        <div class="input-group">
-                            <label for="calc-odds">Bookmaker Decimal Odds</label>
-                            <input type="number" id="calc-odds" step="0.01" min="1.01" placeholder="e.g. 2.50">
+                
+                <!-- Monte Carlo Controls -->
+                <div class="monte-carlo-controls" style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem;">
+                    <h3 style="margin-top: 0; color: var(--accent);">Simulator Parameters</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">Starting Bankroll ($)</label>
+                            <input type="range" id="sim-bankroll" min="500" max="50000" step="500" value="10000" style="width: 100%;">
+                            <div style="text-align: right; font-weight: bold;" id="sim-bankroll-val">$10,000</div>
                         </div>
-                        <div class="input-group">
-                            <label for="calc-prob">Your Simulated True Probability (%)</label>
-                            <input type="number" id="calc-prob" step="1" min="1" max="99" placeholder="e.g. 45">
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">Kelly Multiplier (x)</label>
+                            <input type="range" id="sim-kelly" min="0.05" max="1.0" step="0.05" value="0.25" style="width: 100%;">
+                            <div style="text-align: right; font-weight: bold;" id="sim-kelly-val">0.25x</div>
                         </div>
-                        <button id="btn-verify-bet" class="btn btn-primary">Analyze Bet</button>
-                    </div>
-                    <div id="calc-results" class="calc-results hidden">
-                        <!-- Results injected via JS -->
+                        <div>
+                            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary);">Min EV Threshold (%)</label>
+                            <input type="range" id="sim-ev-thresh" min="0.5" max="10.0" step="0.5" value="2.0" style="width: 100%;">
+                            <div style="text-align: right; font-weight: bold;" id="sim-ev-thresh-val">2.0%</div>
+                        </div>
                     </div>
                 </div>
-            </section>
 
-            <section id="premium-picks" class="event-section ephemeral-active">
-                <div class="section-header">
-                    <h2>💎 SOTA Premium Picks</h2>
-                    <p>Hedge-fund style EV Accumulators & Parlays</p>
+                <!-- Simulation Results -->
+                <div class="portfolio-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <div class="stat-box" style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <h4 style="color: var(--text-secondary); margin:0 0 0.5rem 0;">Simulated CAGR</h4>
+                        <p id="mc-cagr" style="font-size: 1.5rem; font-weight: 700; margin:0; color: var(--success);">--%</p>
+                    </div>
+                    <div class="stat-box" style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <h4 style="color: var(--text-secondary); margin:0 0 0.5rem 0;">Max Drawdown</h4>
+                        <p id="mc-drawdown" style="font-size: 1.5rem; font-weight: 700; margin:0; color: var(--danger);">--%</p>
+                    </div>
+                    <div class="stat-box" style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; text-align: center;">
+                        <h4 style="color: var(--text-secondary); margin:0 0 0.5rem 0;">Risk of Ruin</h4>
+                        <p id="mc-ruin" style="font-size: 1.5rem; font-weight: 700; margin:0;">--</p>
+                    </div>
                 </div>
-                <div id="parlays-container" class="forecast-grid">
-                    <!-- Parlays will be injected here -->
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-top: 1.5rem; margin-bottom: 2rem;">
+                    <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <canvas id="mc-chart" height="250"></canvas>
+                    </div>
+                    <div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <canvas id="mc-histogram" height="250"></canvas>
+                    </div>
+                </div>
+
+                <!-- Removed duplicate Historical Ledger, natively migrated to main Execution Ledger tab. -->
+            </div>
+        </div>
+
+        <!-- Single Match Detail Modal -->
+        <div id="match-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+            <div class="modal-content glass-card" style="width: 90%; max-width: 800px; max-height: 85vh; overflow-y: auto; padding: 2rem; position: relative;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>🔍 Match Diagnostics: <span id="diag-teams" style="color:var(--accent)">Home vs Away</span></h2>
+                    <button onclick="document.getElementById('match-modal').style.display='none'" class="btn btn-secondary" style="cursor: pointer;">✖ Close</button>
+                </div>
+                
+                <div style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem;">
+                    <h3 style="margin-top: 0; color: var(--accent);">Time-Series Line Movement</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">Tracking DK odds updates mapping to the verified match_id over time.</p>
+                    
+                    <div id="diag-chart-container" style="height: 250px; width: 100%; padding: 1rem; border: 1px dashed rgba(255,255,255,0.1); margin-top: 1rem; background: rgba(0,0,0,0.4); border-radius: 8px; overflow-y: auto;">
+                        <div id="diag-time-series-list" style="width: 100%; text-align: left; box-sizing: border-box;">
+                            <!-- Time Series Updates appear here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="stat-box" style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+                        <h4 style="color: var(--text-secondary); margin:0 0 0.5rem 0;">Final / Live Status</h4>
+                        <p id="diag-status" style="font-size: 1.2rem; font-weight: 700; margin:0;">--</p>
+                    </div>
+                    <div class="stat-box" style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+                        <h4 style="color: var(--text-secondary); margin:0 0 0.5rem 0;">Dynamic CLV / Expected Margin</h4>
+                        <p id="diag-clv" style="font-size: 1.2rem; font-weight: 700; margin:0; color: var(--success);">--</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Phase 11: Manager Sandbox Modal (Player Setup) -->
+        <div id="sandbox-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center;">
+            <div class="modal-content glass-card" style="width: 95%; max-width: 1200px; height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 2rem; position: relative;">
+                
+                <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.8rem;">♟️ Institutional Manager Sandbox</h2>
+                        <p style="color: var(--text-secondary); margin: 0.5rem 0 0 0;">Override historical inputs with actual Starting XIs to recalculate bottom-up Micro-Simulation Positional Deltas (WAR).</p>
+                    </div>
+                    <button onclick="document.getElementById('sandbox-modal').style.display='none'" class="btn btn-secondary" style="cursor: pointer; padding: 0.5rem 1rem;">✖ Close</button>
+                </header>
+                
+                <!-- Odds Delta Readout -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; text-align: center;">
+                    <div style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Expected Match Value</span>
+                        <h3 id="sandbox-baseline" style="margin: 0.5rem 0 0 0; font-size: 1.8rem; font-family: monospace;">Awaiting Roster DB...</h3>
+                    </div>
+                    <div style="background: rgba(0,240,255,0.1); border: 1px solid rgba(0,240,255,0.3); padding: 1.5rem; border-radius: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Adjusted True Odds (WAR Edge)</span>
+                        <div id="sandbox-new-odds" style="margin: 0.5rem 0 0 0; font-size: 2.2rem; font-weight: 800; color: #fff; font-family: monospace;">--</div>
+                        <div id="sandbox-delta-val" style="margin-top: 0.5rem; font-size: 1rem; color: var(--success); font-weight: bold;">--</div>
+                        <input type="hidden" id="sandbox-home-id" value="">
+                        <input type="hidden" id="sandbox-away-id" value="">
+                    </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 8px;">
+                        <span style="color: var(--text-secondary); font-size: 0.9rem; text-transform: uppercase;">Recalculated Actual Lineup Value</span>
+                        <h3 id="sandbox-actual" style="margin: 0.5rem 0 0 0; font-size: 1.8rem; font-family: monospace;">--</h3>
+                    </div>
+                </div>
+                
+                <!-- Rosters View -->
+                <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; overflow: hidden;">
+                    <!-- Home Roster -->
+                    <div style="display:flex; flex-direction:column; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); padding: 1rem; overflow-y:auto; height:100%;">
+                        <h3 id="sandbox-home-name" style="margin: 0 0 1rem 0; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; position: sticky; top:0; background: rgba(10,15,25,0.9); z-index:10;">Home Team Roster</h3>
+                        <div id="sandbox-home-roster" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <!-- Mock Players Injected JS -->
+                        </div>
+                    </div>
+                    <!-- Away Roster -->
+                    <div style="display:flex; flex-direction:column; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); padding: 1rem; overflow-y:auto; height:100%;">
+                        <h3 id="sandbox-away-name" style="margin: 0 0 1rem 0; border-bottom: 2px solid #ef4444; padding-bottom: 0.5rem; position: sticky; top:0; background: rgba(10,15,25,0.9); z-index:10;">Away Team Roster</h3>
+                        <div id="sandbox-away-roster" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <!-- Mock Players Injected JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Action -->
+                <div style="margin-top: 1rem; padding-top: 1rem; text-align: center; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <button id="btn-recalculate-sandbox" class="btn btn-primary" onclick="triggerSandboxSimulation()" style="padding: 1rem 3rem; font-size: 1.2rem; border-radius: 30px; box-shadow: 0 0 20px rgba(0,240,255,0.3);">🔄 RE-RUN LINEUP SIMULATION</button>
+                </div>
+                
+            </div>
+        </div>
+
+        <div id="view-live" class="view-section active-view">
+            <header style="position: relative;">
+                <h1>Institutional <span class="accent">Cockpit</span></h1>
+                <p>Live probability pricing streams directly parsing raw bookmaker hooks.</p>
+                <button id="btn-install-pwa" class="btn btn-primary" style="position: absolute; top: 0; right: 0; display: none; margin: 10px; z-index: 100;">⬇️ Download SDK / App</button>
+            </header>
+
+            <div class="live-ticker-container" style="margin-bottom: 2rem; border-radius: 8px;">
+                <div class="live-ticker-content" id="live-ticker">
+                    <div class="ticker-item"><span class="live-pulse">🔴</span> Loading Live Sports Ticker...</div>
+                </div>
+            </div>
+
+            <nav class="sports-nav">
+                <button class="nav-btn active" onclick="handleNavClick('everything', this)">🌟 All Events</button>
+                <button class="nav-btn" onclick="handleNavClick('soccer', this)">⚽ Soccer</button>
+                <button class="nav-btn" onclick="handleNavClick('basketball', this)">🏀 Basketball</button>
+                <button class="nav-btn" onclick="handleNavClick('football', this)">🏈 Football</button>
+                <button class="nav-btn" onclick="handleNavClick('hockey', this)">🏒 Hockey</button>
+                <div class="nav-dropdown">
+                    <button class="nav-btn" id="btn-more-sports">➕ More Sports ▾</button>
+                    <div class="dropdown-content">
+                        <button onclick="handleNavClick('tennis', this)">🎾 Tennis</button>
+                        <button onclick="handleNavClick('cricket', this)">🏏 Cricket</button>
+                        <button onclick="handleNavClick('golf', this)">⛳ Golf</button>
+                        <button onclick="handleNavClick('ice-hockey', this)">⛸️ Ice Hockey</button>
+                        <button onclick="handleNavClick('horse-racing', this)">🏇 Horse Racing</button>
+                        <button onclick="handleNavClick('rugby', this)">🏉 Rugby</button>
+                        <button onclick="handleNavClick('cycling', this)">🚴 Cycling</button>
+                    </div>
+                </div>
+            </nav>
+
+            <main id="dashboard-content">
+
+
+            <section id="live-epl" class="event-section ephemeral-active">
+                <div class="section-header">
+                    <h2>⚽ Live EPL Pipeline Sync</h2>
+                    <p>End-to-End integration of Football-Data API & DraftKings Odds Scraper</p>
+                </div>
+                <div id="epl-container" class="matches-container">
+                    <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">Awaiting Football-Data sync...</div>
                 </div>
             </section>
 
@@ -117,8 +293,116 @@
                     <!-- Weekly forecast cards will be injected here -->
                 </div>
             </section>
-        </main>
-    </div>
+            </main>
+        </div><!-- END VIEW-LIVE -->
+
+        <!-- 2. TIME MACHINE BACKTESTER -->
+        <div id="view-backtest" class="view-section">
+            <header>
+                <h1>Chronological <span class="accent">Time Machine</span></h1>
+                <p>Execute explicit Zero-Lookahead algorithmic validations via Historical CSV Arrays.</p>
+            </header>
+            
+            <div class="match-card" style="text-align:center; max-width: 600px; margin: 0 auto;">
+                <h3 style="margin-bottom: 1rem;">Select Dataset Pipeline</h3>
+                <p style="color:var(--text-secondary); margin-bottom: 2rem;">Ensure epl_historical.csv is mounted in your /db directory before initialization.</p>
+                
+                <button id="btn-run-backtest" class="btn btn-primary" onclick="executeBacktestNode(this)" style="padding: 1rem 2rem; font-size: 1.1rem;">
+                    🚀 EXECUTE BACKTEST NODE
+                </button>
+                
+                <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px dashed rgba(255,255,255,0.1);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
+                        <span style="color:var(--text-secondary)">Simulation Speed:</span>
+                        <span style="color:var(--accent)">1,400 Ticks / Sec</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between;">
+                        <span style="color:var(--text-secondary)">Drawdown Algorithm:</span>
+                        <span style="color:var(--success)">✅ DYNAMIC KELLY ARMED</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. EXECUTION LEDGER -->
+        <div id="view-ledger" class="view-section">
+            <header>
+                <h1>Execution <span class="accent">Ledger</span></h1>
+                <p>Transparent auditable logs mapping directly to your Pillar 7 SQLite Database.</p>
+            </header>
+            <div style="overflow-x: auto; margin-top: 1rem; background: rgba(0,0,0,0.4); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); max-width: 1200px; margin: 0 auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead style="background: rgba(255,255,255,0.05);">
+                        <tr>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Trade Origin</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Match Identifier</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Executed Odds</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Model %</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Calculated Edge</th>
+                            <th style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">Capital Allocated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="global-ledger-body">
+                        <tr><td colspan="6" style="padding: 2rem; text-align:center; color:var(--text-secondary)">Awaiting Ledgers from SQLite Table...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4. CALCULATORS -->
+        <div id="view-calculators" class="view-section">
+            <header>
+                <h1>Risk Assessment <span class="accent">Tools</span></h1>
+                <p>Sanbox mathematical modules bridging isolated market evaluations.</p>
+            </header>
+            
+            <section id="custom-bet-verifier" class="event-section calculator-section">
+                <div class="section-header">
+                    <h2>⚖️ Custom Bet Verifier</h2>
+                    <p>Input bookmaker odds to analyze expected value and Kelly limits.</p>
+                </div>
+                <div class="calculator-panel">
+                    <div class="calc-inputs" style="max-width: 600px; margin: 0 auto;">
+                        <div class="input-group">
+                            <label for="calc-odds">Pinnacle/Bookmaker Decimal Odds</label>
+                            <input type="number" id="calc-odds" step="0.01" min="1.01" placeholder="e.g. 2.50">
+                        </div>
+                        <div class="input-group">
+                            <label for="calc-prob">Nava Poisson Probability (%)</label>
+                            <input type="number" id="calc-prob" step="1" min="1" max="99" placeholder="e.g. 45">
+                        </div>
+                        <button id="btn-verify-bet" class="btn btn-primary" style="margin-top: 1rem;">Process Edge Calculation</button>
+                    </div>
+                    <div id="calc-results" class="calc-results hidden" style="max-width: 600px; margin: 2rem auto 0 auto;">
+                        <!-- Results injected via JS -->
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Global Roster Management View -->
+        <div id="view-rosters" class="view-section">
+            <header>
+                <h1>Entity Management <span class="accent">Dashboard</span></h1>
+                <p>Global baseline tracking for Teams, Players, and Coaching Staff.</p>
+            </header>
+            
+            <section class="event-section">
+                <div class="section-header" style="flex-direction: column; align-items: flex-start; gap: 1rem;">
+                    <h2>Active Franchise Selection</h2>
+                    <select id="global-team-selector" class="glass-input" style="width: 100%; max-width: 400px; padding: 0.8rem; border-radius: 8px; font-size: 1rem; color: #fff; background: rgba(0,0,0,0.5);">
+                        <option value="">Awaiting API Mapping...</option>
+                    </select>
+                </div>
+                
+                <h3 style="margin-top: 2rem; color: var(--accent);">Current Active Squad</h3>
+                <div id="rosters-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                    <div style="color: var(--text-secondary); padding: 1rem;">Select a team to display evaluated personnel.</div>
+                </div>
+            </section>
+        </div>
+        
+    </div> <!-- END MAIN WRAPPER -->
 
     <!-- EPHEMERAL ZERO-UI ORB -->
     <div id="orb-container">
